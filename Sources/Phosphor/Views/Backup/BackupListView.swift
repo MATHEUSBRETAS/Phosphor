@@ -51,6 +51,12 @@ struct BackupListView: View {
                         Label("Import .phosphor Archive", systemImage: "square.and.arrow.down")
                     }
 
+                    Button {
+                        backupVM.openExistingBackupFolder()
+                    } label: {
+                        Label("Open Existing Backup Folder...", systemImage: "folder")
+                    }
+
                     Divider()
 
                     Button {
@@ -79,11 +85,15 @@ struct BackupListView: View {
                 backupProgressView
             }
 
+            if let err = backupVM.loadError, backupVM.backups.isEmpty {
+                backupLoadErrorBanner(err)
+            }
+
             if backupVM.backups.isEmpty {
                 EmptyStateView(
                     icon: "externaldrive",
                     title: "No Backups Found",
-                    subtitle: "Back up your device to browse its contents, extract messages, photos, and app data.",
+                    subtitle: "Back up your device, or pick an existing backup folder via New Backup -> Open Existing Backup Folder.",
                     action: {
                         guard let udid = deviceVM.selectedDevice?.id else { return }
                         Task { await backupVM.createBackup(udid: udid) }
@@ -170,6 +180,31 @@ struct BackupListView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(Color.indigo.opacity(0.06))
+    }
+
+    @ViewBuilder
+    private func backupLoadErrorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .font(.system(size: 16))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Cannot read backup directory")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Spacer()
+            Button("Pick Folder...") {
+                backupVM.openExistingBackupFolder()
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color.orange.opacity(0.08))
     }
 }
 

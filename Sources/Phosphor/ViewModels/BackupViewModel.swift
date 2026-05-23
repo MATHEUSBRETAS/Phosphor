@@ -11,6 +11,7 @@ final class BackupViewModel: ObservableObject {
     @Published var progressText = ""
     @Published var showAlert = false
     @Published var alertMessage = ""
+    @Published var loadError: String?
 
     // Browser state
     @Published var browserDomains: [String] = []
@@ -25,6 +26,35 @@ final class BackupViewModel: ObservableObject {
     func loadBackups() {
         backupManager.discoverBackups()
         backups = backupManager.backups
+        loadError = backupManager.lastError
+    }
+
+    func openExistingBackupFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        panel.message = "Pick a folder containing iOS backups, or a single UDID backup folder."
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let path = url.path
+
+        let target: String
+        if BackupManager.looksLikeBackupFolder(path) {
+            // User picked a single UDID backup. Point the directory at its parent so
+            // sibling backups also appear, and discovery falls into the normal path.
+            target = (path as NSString).deletingLastPathComponent
+        } else {
+            target = path
+        }
+
+        UserDefaults.standard.set(target, forKey: BackupManager.backupDirectoryUserDefaultsKey)
+        loadBackups()
+        if backups.isEmpty {
+            alertMessage = loadError ?? "No backups found in \(target)."
+            showAlert = true
+        }
     }
 
     func createBackup(udid: String, incremental: Bool = false) async {

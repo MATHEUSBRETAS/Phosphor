@@ -167,18 +167,56 @@ final class BackupManager: ObservableObject {
         let dir = directory ?? Self.activeBackupDir
         let fm = FileManager.default
 
-        guard fm.fileExists(atPath: dir) else {
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: dir, isDirectory: &isDir) else {
             backups = []
+            lastError = nil
+            return
+        }
+        guard isDir.boolValue else {
+            backups = []
+            lastError = "\(dir) is not a directory."
             return
         }
 
-        let contents = fm.sortedContents(atPath: dir)
-        var discovered: [BackupInfo] = []
+        // Single-backup case: the chosen dir is itself a UDID backup folder
+        // (contains Info.plist + Manifest.* at its root). Common when a user
+        // points the picker at an individual backup rather than its parent.
+        let rootInfoPlist = (dir as NSString).appendingPathComponent("Info.plist")
+        if fm.fileExists(atPath: rootInfoPlist),
+           let single = BackupInfo.fromDirectory(dir) {
+            backups = [single]
+            lastError = nil
+            return
+        }
 
+        let contents: [String]
+        do {
+            contents = try fm.contentsOfDirectory(atPath: dir).sorted()
+        } catch {
+            backups = []
+            // TCC denial on ~/Library/Application Support/MobileSync/Backup
+            // surfaces as a permission error here. Tell the user how to fix it.
+            let isMobileSync = (dir == Self.systemMobileSyncDir)
+            var msg = "Cannot read backup directory at \(dir): \(error.localizedDescription)"
+            if isMobileSync {
+                msg += """
+
+
+                macOS protects Apple's MobileSync backups with TCC. Grant Phosphor Full Disk Access:
+                System Settings -> Privacy & Security -> Full Disk Access -> enable Phosphor, then restart the app.
+                Alternatively, copy a backup folder into ~/Documents/Phosphor Backups or use Phosphor > Settings to point at a non-protected location.
+                """
+            }
+            lastError = msg
+            return
+        }
+
+        var discovered: [BackupInfo] = []
         for item in contents {
             let fullPath = (dir as NSString).appendingPathComponent(item)
-            var isDir: ObjCBool = false
-            guard fm.fileExists(atPath: fullPath, isDirectory: &isDir), isDir.boolValue else { continue }
+            var itemIsDir: ObjCBool = false
+            guard fm.fileExists(atPath: fullPath, isDirectory: &itemIsDir), itemIsDir.boolValue else { continue }
 
             let infoPlist = (fullPath as NSString).appendingPathComponent("Info.plist")
             guard fm.fileExists(atPath: infoPlist) else { continue }
@@ -189,6 +227,17 @@ final class BackupManager: ObservableObject {
         }
 
         backups = discovered.sorted { ($0.lastBackupDate ?? .distantPast) > ($1.lastBackupDate ?? .distantPast) }
+        lastError = nil
+    }
+
+    /// True when `path` looks like a single iOS backup folder (UDID dir with Info.plist + Manifest.*).
+    static func looksLikeBackupFolder(_ path: String) -> Bool {
+        let fm = FileManager.default
+        let info = (path as NSString).appendingPathComponent("Info.plist")
+        let manifestPlist = (path as NSString).appendingPathComponent("Manifest.plist")
+        let manifestDb = (path as NSString).appendingPathComponent("Manifest.db")
+        return fm.fileExists(atPath: info) &&
+               (fm.fileExists(atPath: manifestPlist) || fm.fileExists(atPath: manifestDb))
     }
 
     // MARK: - Backup Creation

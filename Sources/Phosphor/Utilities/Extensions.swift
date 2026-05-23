@@ -226,11 +226,11 @@ enum TunnelService {
 
 enum AppVersion {
     static var current: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "2.1"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     }
 
     static var build: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "2"
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
     }
 }
 

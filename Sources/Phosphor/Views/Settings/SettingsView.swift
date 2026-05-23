@@ -62,9 +62,22 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Default: ~/Documents/Phosphor Backups (no special permission required)")
+                HStack {
+                    Button("Use Apple MobileSync directory") {
+                        backupDirectory = BackupManager.systemMobileSyncDir
+                    }
+                    Spacer()
+                }
+
+                Text("Default: ~/Documents/Phosphor Backups (no special permission required).")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+
+                if backupDirectory == BackupManager.systemMobileSyncDir {
+                    Text("MobileSync is TCC-protected. If Phosphor cannot read it, grant Full Disk Access in System Settings -> Privacy & Security -> Full Disk Access, then restart the app.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                }
             }
 
             Section("Device Polling") {
