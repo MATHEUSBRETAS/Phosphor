@@ -1,6 +1,6 @@
 cask "phosphor" do
   version "1.0.6"
-  sha256 "0e5c6d4bfb551ff91584ec142c0b19541e8a34e82db0a3784d170bec4d824b6a"
+  sha256 "e918b834100b903a4a50a0fc3ba6dc398557650ee446cf8cf377b76555b3d833"
 
   url "https://github.com/momenbasel/Phosphor/releases/download/v#{version}/Phosphor.dmg"
   name "Phosphor"
