@@ -27,21 +27,39 @@ struct BackupListView: View {
                 Spacer()
 
                 Menu {
-                    Button {
-                        guard let udid = deviceVM.selectedDevice?.id else { return }
-                        Task { await backupVM.createBackup(udid: udid) }
-                    } label: {
-                        Label("Full Backup", systemImage: "externaldrive.badge.plus")
-                    }
-                    .disabled(deviceVM.selectedDevice == nil)
+                    if deviceVM.selectedDevice?.connectionType == .wifi {
+                        Button {
+                            guard let udid = deviceVM.selectedDevice?.id else { return }
+                            Task { await backupVM.createBackup(udid: udid, incremental: true) }
+                        } label: {
+                            Label("Incremental Wi-Fi Backup (Recommended)", systemImage: "wifi")
+                        }
+                        .disabled(deviceVM.selectedDevice == nil)
 
-                    Button {
-                        guard let udid = deviceVM.selectedDevice?.id else { return }
-                        Task { await backupVM.createBackup(udid: udid, incremental: true) }
-                    } label: {
-                        Label("Incremental Backup", systemImage: "arrow.triangle.2.circlepath")
+                        Button {
+                            guard let udid = deviceVM.selectedDevice?.id else { return }
+                            Task { await backupVM.createBackup(udid: udid) }
+                        } label: {
+                            Label("Full Wi-Fi Backup", systemImage: "externaldrive.badge.plus")
+                        }
+                        .disabled(deviceVM.selectedDevice == nil)
+                    } else {
+                        Button {
+                            guard let udid = deviceVM.selectedDevice?.id else { return }
+                            Task { await backupVM.createBackup(udid: udid) }
+                        } label: {
+                            Label("Full Backup", systemImage: "externaldrive.badge.plus")
+                        }
+                        .disabled(deviceVM.selectedDevice == nil)
+
+                        Button {
+                            guard let udid = deviceVM.selectedDevice?.id else { return }
+                            Task { await backupVM.createBackup(udid: udid, incremental: true) }
+                        } label: {
+                            Label("Incremental Backup", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(deviceVM.selectedDevice == nil)
                     }
-                    .disabled(deviceVM.selectedDevice == nil)
 
                     Divider()
 

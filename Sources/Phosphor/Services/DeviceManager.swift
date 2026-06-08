@@ -13,6 +13,12 @@ final class DeviceManager: ObservableObject {
     @Published var dependencyStatus: [String: Bool] = [:]
 
     private var pollTimer: Timer?
+    private var deviceInfoCache: [String: (device: DeviceInfo, fetchedAt: Date)] = [:]
+    private var batteryInfoCache: [String: (info: [String: String], fetchedAt: Date)] = [:]
+    private var pairStatusCache: [String: (isPaired: Bool, fetchedAt: Date)] = [:]
+    private let deviceInfoRefreshInterval: TimeInterval = 30
+    private let batteryInfoRefreshInterval: TimeInterval = 60
+    private let pairStatusRefreshInterval: TimeInterval = 120
 
     init() {
         checkDependencies()
@@ -41,9 +47,16 @@ final class DeviceManager: ObservableObject {
 
     // MARK: - Device Detection
 
-    func scanForDevices() async {
+    func scanForDevices(forceRefresh: Bool = false) async {
+        if isScanning {
+            guard forceRefresh else { return }
+            while isScanning {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
         isScanning = true
         lastError = nil
+        defer { isScanning = false }
 
         // Primary: pymobiledevice3 (with connection type)
         var entries = await PyMobileDevice.listDevicesWithType()
@@ -61,33 +74,65 @@ final class DeviceManager: ObservableObject {
         if entries.isEmpty {
             connectedDevices = []
             selectedDevice = nil
-            isScanning = false
+            deviceInfoCache.removeAll()
+            batteryInfoCache.removeAll()
+            pairStatusCache.removeAll()
             return
         }
+
+        let visibleUDIDs = Set(entries.map(\.udid))
+        deviceInfoCache = deviceInfoCache.filter { visibleUDIDs.contains($0.key) }
+        batteryInfoCache = batteryInfoCache.filter { visibleUDIDs.contains($0.key) }
+        pairStatusCache = pairStatusCache.filter { visibleUDIDs.contains($0.key) }
 
         var devices: [DeviceInfo] = []
         for entry in entries {
             let connType: DeviceInfo.ConnectionType = entry.connectionType == "USB" ? .usb : .wifi
-            if var device = await fetchDeviceInfo(udid: entry.udid) {
+            if !forceRefresh, let cached = cachedDevice(udid: entry.udid, connectionType: connType) {
+                devices.append(cached)
+                continue
+            }
+            if var device = await fetchDeviceInfo(
+                udid: entry.udid,
+                connectionType: connType,
+                forceRefresh: forceRefresh
+            ) {
                 device.connectionType = connType
+                deviceInfoCache[entry.udid] = (device, Date())
                 devices.append(device)
             }
         }
 
         connectedDevices = devices
-        if selectedDevice == nil || !devices.contains(where: { $0.id == selectedDevice?.id }) {
+        if let selectedID = selectedDevice?.id,
+           let refreshedSelection = devices.first(where: { $0.id == selectedID }) {
+            selectedDevice = refreshedSelection
+        } else {
             selectedDevice = devices.first
         }
-        isScanning = false
+    }
+
+    private func cachedDevice(udid: String, connectionType: DeviceInfo.ConnectionType) -> DeviceInfo? {
+        guard let cached = deviceInfoCache[udid],
+              Date().timeIntervalSince(cached.fetchedAt) < deviceInfoRefreshInterval else {
+            return nil
+        }
+        var device = cached.device
+        device.connectionType = connectionType
+        return device
     }
 
     /// Fetch detailed info for a specific device.
-    func fetchDeviceInfo(udid: String) async -> DeviceInfo? {
+    func fetchDeviceInfo(
+        udid: String,
+        connectionType: DeviceInfo.ConnectionType = .usb,
+        forceRefresh: Bool = false
+    ) async -> DeviceInfo? {
         // Primary: pymobiledevice3
         let info = await PyMobileDevice.deviceInfo(udid: udid)
         if !info.isEmpty {
-            let batteryInfo = await PyMobileDevice.batteryInfo(udid: udid)
-            let isPaired = await PyMobileDevice.validatePair(udid: udid)
+            let batteryInfo = await cachedBatteryInfo(udid: udid, forceRefresh: forceRefresh)
+            let isPaired = await cachedPymobiledevicePairStatus(udid: udid, forceRefresh: forceRefresh)
 
             let batteryLevel = batteryInfo["CurrentCapacity"].flatMap(Int.init)
                 ?? batteryInfo["BatteryCurrentCapacity"].flatMap(Int.init)
@@ -140,7 +185,7 @@ final class DeviceManager: ObservableObject {
                 mobileCountryCode: info["MobileSubscriberCountryCode"],
                 mobileNetworkCode: info["MobileSubscriberNetworkCode"],
                 iccid: info["IntegratedCircuitCardIdentity"],
-                connectionType: .usb
+                connectionType: connectionType
             )
         }
 
@@ -153,7 +198,7 @@ final class DeviceManager: ObservableObject {
         let batteryInfo = batteryResult.output.parseKeyValuePairs()
         let diskResult = await Shell.runAsync("ideviceinfo", arguments: ["-u", udid, "-q", "com.apple.disk_usage"])
         let diskInfo = diskResult.output.parseKeyValuePairs()
-        let pairResult = await Shell.runAsync("idevicepair", arguments: ["-u", udid, "validate"])
+        let isPaired = await cachedLibimobiledevicePairStatus(udid: udid, forceRefresh: forceRefresh)
 
         return DeviceInfo(
             id: udid,
@@ -174,28 +219,79 @@ final class DeviceManager: ObservableObject {
             availableDiskSpace: diskInfo["AmountDataAvailable"].flatMap(UInt64.init),
             totalDataCapacity: diskInfo["TotalDataCapacity"].flatMap(UInt64.init),
             totalSystemCapacity: diskInfo["TotalSystemCapacity"].flatMap(UInt64.init),
-            isPaired: pairResult.succeeded,
+            isPaired: isPaired,
             isActivated: liInfo["ActivationState"] == "Activated",
             basebandVersion: liInfo["BasebandVersion"],
             activationState: liInfo["ActivationState"],
-            connectionType: .usb
+            connectionType: connectionType
         )
+    }
+
+    private func cachedBatteryInfo(udid: String, forceRefresh: Bool = false) async -> [String: String] {
+        if !forceRefresh,
+           let cached = batteryInfoCache[udid],
+           Date().timeIntervalSince(cached.fetchedAt) < batteryInfoRefreshInterval {
+            return cached.info
+        }
+        let info = await PyMobileDevice.batteryInfo(udid: udid)
+        batteryInfoCache[udid] = (info, Date())
+        return info
+    }
+
+    private func cachedPymobiledevicePairStatus(udid: String, forceRefresh: Bool = false) async -> Bool {
+        if !forceRefresh,
+           let cached = pairStatusCache[udid],
+           Date().timeIntervalSince(cached.fetchedAt) < pairStatusRefreshInterval {
+            return cached.isPaired
+        }
+        let isPaired = await PyMobileDevice.validatePair(udid: udid)
+        pairStatusCache[udid] = (isPaired, Date())
+        return isPaired
+    }
+
+    private func cachedLibimobiledevicePairStatus(udid: String, forceRefresh: Bool = false) async -> Bool {
+        if !forceRefresh,
+           let cached = pairStatusCache[udid],
+           Date().timeIntervalSince(cached.fetchedAt) < pairStatusRefreshInterval {
+            return cached.isPaired
+        }
+        let result = await Shell.runAsync("idevicepair", arguments: ["-u", udid, "validate"])
+        pairStatusCache[udid] = (result.succeeded, Date())
+        return result.succeeded
     }
 
     /// Pair with a device.
     func pairDevice(udid: String) async -> Bool {
+        pairStatusCache.removeValue(forKey: udid)
         // Primary: pymobiledevice3
-        if await PyMobileDevice.pair(udid: udid) { return true }
+        if await PyMobileDevice.pair(udid: udid) {
+            pairStatusCache[udid] = (true, Date())
+            deviceInfoCache.removeValue(forKey: udid)
+            return true
+        }
         // Fallback
         let result = await Shell.runAsync("idevicepair", arguments: ["-u", udid, "pair"])
-        if !result.succeeded { lastError = result.stderr.nilIfEmpty ?? result.output }
+        if result.succeeded {
+            pairStatusCache[udid] = (true, Date())
+            deviceInfoCache.removeValue(forKey: udid)
+        } else {
+            lastError = result.stderr.nilIfEmpty ?? result.output
+        }
         return result.succeeded
     }
 
     /// Unpair a device.
     func unpairDevice(udid: String) async -> Bool {
-        if await PyMobileDevice.unpair(udid: udid) { return true }
-        return (await Shell.runAsync("idevicepair", arguments: ["-u", udid, "unpair"])).succeeded
+        pairStatusCache.removeValue(forKey: udid)
+        var success = await PyMobileDevice.unpair(udid: udid)
+        if !success {
+            success = (await Shell.runAsync("idevicepair", arguments: ["-u", udid, "unpair"])).succeeded
+        }
+        if success {
+            pairStatusCache[udid] = (false, Date())
+            deviceInfoCache.removeValue(forKey: udid)
+        }
+        return success
     }
 
     /// Get device name.

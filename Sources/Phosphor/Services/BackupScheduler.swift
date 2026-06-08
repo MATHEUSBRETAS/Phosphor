@@ -153,49 +153,46 @@ final class BackupScheduler: ObservableObject {
     // MARK: - Device Discovery
 
     private func findTargetDevice() async -> String? {
-        // Check specific target first
-        if let target = schedule.targetUDID {
-            // pymobiledevice3 device listing
-            let allDevices = await PyMobileDevice.listDevices()
-            if allDevices.contains(target) { return target }
+        let pyEntries = await PyMobileDevice.listDevicesWithType()
+        let eligiblePyEntries = schedule.wifiOnly
+            ? pyEntries.filter { $0.connectionType != "USB" }
+            : pyEntries
 
-            // WiFi check
+        // Check specific target first.
+        if let target = schedule.targetUDID {
+            if eligiblePyEntries.contains(where: { $0.udid == target }) { return target }
+
             if schedule.wifiOnly {
                 let networkDevices = await PyMobileDevice.listNetworkDevices()
                 if networkDevices.contains(target) { return target }
             }
 
-            // Fallback: libimobiledevice
-            let usbResult = await Shell.runAsync("idevice_id", arguments: ["-l"])
-            if usbResult.succeeded {
-                let devices = usbResult.output.components(separatedBy: "\n").filter { !$0.isEmpty }
+            // Fallback: libimobiledevice. Use the network-only query when the schedule
+            // explicitly requests Wi-Fi backups so USB devices do not accidentally match.
+            let fallbackArgs = schedule.wifiOnly ? ["-n"] : ["-l"]
+            let result = await Shell.runAsync("idevice_id", arguments: fallbackArgs)
+            if result.succeeded {
+                let devices = result.output.components(separatedBy: "\n").filter { !$0.isEmpty }
                 if devices.contains(target) { return target }
             }
             return nil
         }
 
-        // No specific target - find any device
-        // pymobiledevice3 USB
-        let pyDevices = await PyMobileDevice.listDevices()
-        if let first = pyDevices.first { return first }
+        // No specific target: use the first eligible pymobiledevice3 result, preferring
+        // the single `usbmux list` snapshot over separate USB and network probes.
+        if let first = eligiblePyEntries.first { return first.udid }
 
-        // Fallback USB
-        let usbResult = await Shell.runAsync("idevice_id", arguments: ["-l"])
-        if usbResult.succeeded {
-            let devices = usbResult.output.components(separatedBy: "\n").filter { !$0.isEmpty }
-            if let first = devices.first { return first }
-        }
-
-        // WiFi
         if schedule.wifiOnly {
             let networkDevices = await PyMobileDevice.listNetworkDevices()
             if let first = networkDevices.first { return first }
+        }
 
-            let wifiResult = await Shell.runAsync("idevice_id", arguments: ["-n"])
-            if wifiResult.succeeded {
-                let devices = wifiResult.output.components(separatedBy: "\n").filter { !$0.isEmpty }
-                if let first = devices.first { return first }
-            }
+        // Fallback: libimobiledevice.
+        let fallbackArgs = schedule.wifiOnly ? ["-n"] : ["-l"]
+        let result = await Shell.runAsync("idevice_id", arguments: fallbackArgs)
+        if result.succeeded {
+            let devices = result.output.components(separatedBy: "\n").filter { !$0.isEmpty }
+            if let first = devices.first { return first }
         }
 
         return nil
