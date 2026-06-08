@@ -1,27 +1,34 @@
-<!-- Last session: 2026-05-27 -->
+<!-- Last session: 2026-06-08 -->
 # Phosphor - Handoff
 
 ## Current Objective
-Messages overhaul on main, queued for v1.0.7. Closes GitHub issues #16 (Homebrew tap stuck on 1.0.4) and #17 (Messages bugs - attachments, contact names, group titles, reactions, hidden chats, HTML export extension, pluginPayload cleanup). Build green (`swift build`). No DMG cut yet.
+v1.0.7 SHIPPED. Signed + notarized + stapled DMG published; Homebrew tap bumped. This release bundles two things:
+1. PR #17 messages overhaul (already on main from prior cycle).
+2. PR #19 "harden macOS dependency and backup flows" (external contributor AJV20) - reviewed, approved, squash-merged (`5156c3b`).
 
-## Recently Modified Files
-- `Sources/Phosphor/Models/Message.swift` - added `Reaction` / `ReactionType`, `MessageAttachment.isPluginPayload/isImage/isVideo`, multi-attachment + reaction + senderName + linkURL on `Message`, and `participants`/`resolvedTitle` on `MessageChat`.
-- `Sources/Phosphor/Utilities/ContactDirectory.swift` - new value type. Builds phone (last-10-digit) + email index from `ContactsExtractor.Contact`; exposes `name(forHandle:)`, `displayName(forHandle:)`, `groupTitle(participants:)`.
-- `Sources/Phosphor/Services/MessageExporter.swift` - accepts a `ContactDirectory`; dynamic column gating against the live `chat` / `message` schema; resolves group chat titles from `chat_handle_join`; filters `is_archived`/`is_filtered`/`is_blackholed` chats (with `includeHidden:` opt-out for exports); separate attachment query keyed by message ROWID (no more join-row explosions); reaction add/remove resolver (`associated_message_type` 2000..3005, strips `p:<part>/` and `bp:<part>/` prefixes); rich-link URL extraction via `NSDataDetector` + bplist `$objects` scan; HTML escape helper covers `"`/`'`; HTML/MBOX/JSON/TXT/CSV exporters now render multi-attachments, reactions, and link previews; plugin-payload attachments are dropped from staging.
-- `Sources/Phosphor/ViewModels/MessageViewModel.swift` - best-effort `ContactDirectory` from `ContactsExtractor` at load (silent fallback to `.empty`); new `ensureExtension(_:for:)` re-anchors save path to the chosen format; `resolveAttachmentDiskPath(for:)` forwards to the exporter for inline image rendering.
-- `Sources/Phosphor/Views/Messages/MessageListView.swift` - bubble renders inline `NSImage` for image attachments, file/icon button for everything else (Finder open on click), inline `Link` for rich-link previews, floating reaction badge; export now uses `NSSavePanel` with the format's `UTType` (HTML lands as `.html`, JSON as `.json`, MBOX as `.mbox`); "Export All Conversations As..." submenu so the format isn't tied to the last single-chat export.
-- `Homebrew/phosphor.rb` - corrected sha256 to the actual v1.0.6 DMG digest (`e918b834...`). The old in-tree value didn't match the release asset.
+## What Shipped in #19 (reviewed + merged)
+- `Sources/Phosphor/Utilities/Shell.swift` - `Shell.run` now actually enforces its `timeout` param (was accepted but ignored); reads stdout/stderr on separate dispatch queues to kill a potential pipe-buffer deadlock; PATH-injection logic extracted to `environmentWithToolPaths()` and applied to both sync `run` and `runAsync`; dropped `ifuse` from `checkDependencies()`; pymobiledevice3 detection now uses `PyMobileDevice.available()` instead of `python3 -c import`.
+- `Sources/Phosphor/Services/NativeBackupService.swift` - REMOVED the silent auto-`pip3 install pymobiledevice3`; replaced with a guard + install guidance. Backup/restore now go through `PyMobileDevice.runAsync`.
+- `Sources/Phosphor/Utilities/PyMobileDevice.swift` - `directBinaryWorks(at:)` validates console-script shims (`<path> version`) before caching, preventing stale-shim false positives.
+- `Sources/Phosphor/Services/BackupManager.swift` - new `backupDirectoryWarning(for:)` (cloud-synced folder check), new corrupt/zero-length backup error hint, `defaultBackupDir` -> `systemMobileSyncDir` for the MobileSync-specific TCC message.
+- `FileTransferManager`/`MusicTransferManager`/`LiveDeviceBrowser` - guard `Shell.which("ifuse")` before the legacy ifuse fallback; `LiveDeviceBrowser` caches DCIM folder list at mount and counts during scan (no double scan; `photoCount` is 0 until first scan).
+- View files - `#Preview` blocks wrapped in `#if canImport(PreviewsMacros)` so `swift build` works under Command Line Tools; SettingsView surfaces the cloud-folder warning; pip3 -> pipx guidance throughout README/UI strings.
+- `Resources/Info.plist` - `CFBundleShortVersionString` 1.0.7, `CFBundleVersion` 7 (`803da13`).
 
-External: `momenbasel/homebrew-phosphor@d74f13e` bumps the tap to 1.0.6 (`brew info phosphor` now reports the correct version) - closes #16.
-
-## Issues / PRs Closed This Cycle
-- #16 closed - tap bumped + verified via `brew info phosphor`.
-- #17 closed in code; remains opened on the user end until 1.0.7 ships. Mark closed on release.
-
-## Next Steps / Open Items
-- Cut v1.0.7: bump `Resources/Info.plist` (`CFBundleShortVersionString` -> 1.0.7, `CFBundleVersion` -> 7), update `Sources/Phosphor/Utilities/Extensions.swift` if its fallback string is hard-coded, run `bash Scripts/release-local.sh v1.0.7`, then update both `Homebrew/phosphor.rb` and the `homebrew-phosphor` tap with the new DMG sha.
-- Known limitation documented in the #17 reply: chats genuinely deleted on the iPhone but still synced via iCloud Messages may persist - sms.db has no `is_deleted` flag. We now filter `is_archived` / `is_filtered` / `is_blackholed`, which catches the realistic "I don't want to see this" intent.
-- `attributedBody` typedstream parsing remains unimplemented - a small fraction of iOS 16+ messages have empty `text` and the actual content sits in the NSArchiver blob. Future enhancement: pull the UTF-8 segment via byte scan or `NSUnarchiver` (deprecated but still works on macOS 14).
+## Open Review Nits from #19 (non-blocking, future cleanup)
+- `Shell.swift`: theoretical data race on captured `stdoutData/stderrData` if a pipe read hangs past the 2s grace window after a timeout kill (worst case = garbled stderr string, no crash).
+- `Shell.swift`: timeout termination escalates SIGTERM -> SIGINT, no SIGKILL fallback for a truly wedged child.
+- `LiveDeviceBrowser`: `photoCount` reads 0 until the first scan runs (intentional perf tradeoff).
 
 ## Release Verification
-- Last release: tag `v1.0.6` (https://github.com/momenbasel/Phosphor/releases/tag/v1.0.6). Real DMG SHA256: `e918b834100b903a4a50a0fc3ba6dc398557650ee446cf8cf377b76555b3d833` (HANDOFF previously recorded the wrong digest).
+- Tag: `v1.0.7` -> https://github.com/momenbasel/Phosphor/releases/tag/v1.0.7
+- DMG SHA256: `843697a2e8e3f0634e50e640b0bd608892f6ccbf9704863cd64d686cd435b968` (verified identical to the published release asset).
+- Notarization: status **Accepted** (submission `033830ff-a1e5-48fb-8b3d-4d9f635aff28`), stapled, `spctl` accepted (Notarized Developer ID).
+- In-repo cask `Homebrew/phosphor.rb` bumped + pushed (`b2c2b72`).
+- External tap `momenbasel/homebrew-phosphor@2bc474c` bumped to 1.0.7; `brew info --cask phosphor` reports 1.0.7.
+- AC_NOTARY keychain profile (re)provisioned from `~/.appstoreconnect/private_keys/` (key id `5G7R52L8RK`).
+
+## Next Steps / Open Items
+- Open issues #18 and #2 are platform-expansion feature requests (Windows/Linux) - not actionable this cycle.
+- `attributedBody` typedstream parsing still unimplemented - a small fraction of iOS 16+ messages have empty `text` with content in the NSArchiver blob. Future: byte-scan the UTF-8 segment or `NSUnarchiver`.
+- Consider folding the three #19 review nits into a small `Shell.swift` hardening pass next time that file is touched.
