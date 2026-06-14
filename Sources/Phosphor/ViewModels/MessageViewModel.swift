@@ -19,6 +19,9 @@ final class MessageViewModel: ObservableObject {
 
     func loadChats(from backupPath: String) {
         self.backupPath = backupPath
+        selectedChat = nil
+        messages = []
+        searchResults = []
         isLoading = true
 
         // Best-effort contact directory: if the AddressBook database isn't in

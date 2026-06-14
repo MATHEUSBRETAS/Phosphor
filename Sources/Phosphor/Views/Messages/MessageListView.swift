@@ -22,6 +22,11 @@ struct MessageListView: View {
             messageDetailPane
         }
         .onAppear(perform: loadIfNeeded)
+        .alert("Messages", isPresented: $messageVM.showAlert) {
+            Button("OK") {}
+        } message: {
+            Text(messageVM.alertMessage)
+        }
     }
 
     // MARK: - Chat List
@@ -34,6 +39,9 @@ struct MessageListView: View {
                     .font(.headline)
                 Spacer()
                 if !messageVM.chats.isEmpty {
+                    exportAllMenu
+                }
+                if !messageVM.chats.isEmpty {
                     Text("\(messageVM.totalMessages) messages")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
@@ -41,6 +49,12 @@ struct MessageListView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+
+            if !backupVM.backups.isEmpty {
+                backupPicker
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
 
             // Search
             HStack {
@@ -64,26 +78,33 @@ struct MessageListView: View {
                 EmptyStateView(
                     icon: "message",
                     title: "No Backup Available",
-                    subtitle: "Create a backup first from the Backups section. Messages are read from local device backups."
+                    subtitle: "Create a backup first, or choose an existing backup folder. Messages are read from local device backups.",
+                    action: chooseBackupFolder,
+                    actionLabel: "Choose Backup Folder"
                 )
             } else if backupVM.selectedBackup == nil {
                 EmptyStateView(
                     icon: "message",
                     title: "No Backup Selected",
-                    subtitle: "Go to Backups, select a backup, then return here to browse messages.",
+                    subtitle: backupVM.backups.isEmpty
+                        ? "Create a backup first, or choose an existing backup folder."
+                        : "Choose a backup below, or use the latest one to browse and export messages.",
                     action: {
                         if let first = backupVM.backups.first {
-                            backupVM.openBackupBrowser(first)
-                            messageVM.loadChats(from: first.path)
+                            selectBackup(first)
+                        } else {
+                            chooseBackupFolder()
                         }
                     },
-                    actionLabel: backupVM.backups.isEmpty ? nil : "Use Latest Backup"
+                    actionLabel: backupVM.backups.isEmpty ? "Choose Backup Folder" : "Use Latest Backup"
                 )
             } else if messageVM.chats.isEmpty {
                 EmptyStateView(
                     icon: "message",
                     title: "No Messages Found",
-                    subtitle: "This backup doesn't contain messages, or it may be encrypted."
+                    subtitle: "This backup doesn't contain messages, or it may be encrypted.",
+                    action: chooseBackupFolder,
+                    actionLabel: "Choose Different Backup"
                 )
             } else {
                 List(filteredChats, selection: Binding<MessageChat?>(
@@ -105,6 +126,52 @@ struct MessageListView: View {
             $0.chatIdentifier.localizedCaseInsensitiveContains(searchText) ||
             $0.participants.contains { $0.localizedCaseInsensitiveContains(searchText) }
         }
+    }
+
+
+    private var backupPicker: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "externaldrive.fill")
+                .foregroundStyle(.secondary)
+            Menu {
+                ForEach(backupVM.backups) { backup in
+                    Button("\(backup.displayName) • \(backup.relativeDate)") {
+                        selectBackup(backup)
+                    }
+                }
+                Divider()
+                Button("Choose Backup Folder…") {
+                    chooseBackupFolder()
+                }
+            } label: {
+                HStack {
+                    Text(backupVM.selectedBackup.map { "\($0.displayName) • \($0.relativeDate)" } ?? "Choose Backup")
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .font(.system(size: 11))
+            }
+            .menuStyle(.borderlessButton)
+
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.quaternary)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var exportAllMenu: some View {
+        Menu("Export All") {
+            ForEach(MessageExportFormat.allCases, id: \.self) { format in
+                Button(format.rawValue) {
+                    exportAllConversations(format: format)
+                }
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .font(.system(size: 11, weight: .medium))
     }
 
     private func chatRow(_ chat: MessageChat) -> some View {
@@ -200,7 +267,13 @@ struct MessageListView: View {
                 EmptyStateView(
                     icon: "bubble.left.and.bubble.right",
                     title: "Select a Conversation",
-                    subtitle: "Choose a conversation from the list to view messages."
+                    subtitle: messageVM.chats.isEmpty
+                        ? "Choose a backup to load messages."
+                        : "Choose a conversation from the list, or export every conversation at once.",
+                    action: messageVM.chats.isEmpty ? nil : {
+                        exportAllConversations(format: .html)
+                    },
+                    actionLabel: messageVM.chats.isEmpty ? nil : "Export All as HTML…"
                 )
             }
         }
@@ -209,8 +282,39 @@ struct MessageListView: View {
     // MARK: - Helpers
 
     private func loadIfNeeded() {
+        if backupVM.backups.isEmpty {
+            backupVM.loadBackups()
+        }
+
         if let backup = backupVM.selectedBackup {
-            messageVM.loadChats(from: backup.path)
+            loadMessages(from: backup)
+        } else if let latest = backupVM.backups.first {
+            selectBackup(latest)
+        }
+    }
+
+    private func selectBackup(_ backup: BackupInfo) {
+        backupVM.selectedBackup = backup
+        loadMessages(from: backup)
+    }
+
+    private func chooseBackupFolder() {
+        let previousPaths = backupVM.backups.map(\.path)
+        backupVM.openExistingBackupFolder()
+
+        // If the folder changed, prefer the newest backup in that folder so the
+        // user can immediately export without visiting Backups first. If the
+        // picker was cancelled, leave the current selection alone.
+        guard backupVM.backups.map(\.path) != previousPaths else { return }
+        if let latest = backupVM.backups.first {
+            selectBackup(latest)
+        }
+    }
+
+    private func loadMessages(from backup: BackupInfo) {
+        messageVM.loadChats(from: backup.path)
+        if messageVM.selectedChat == nil, let firstChat = messageVM.chats.first {
+            messageVM.selectChat(firstChat)
         }
     }
 
@@ -227,7 +331,10 @@ struct MessageListView: View {
         panel.canCreateDirectories = true
 
         if panel.runModal() == .OK, let url = panel.url {
-            _ = messageVM.exportChat(format: format, to: url.path)
+            if messageVM.exportChat(format: format, to: url.path) {
+                messageVM.alertMessage = "Exported conversation"
+                messageVM.showAlert = true
+            }
         }
     }
 
@@ -240,9 +347,12 @@ struct MessageListView: View {
         panel.message = "Choose a folder to export all conversations"
 
         if panel.runModal() == .OK, let url = panel.url {
+            messageVM.showAlert = false
             let count = messageVM.exportAllChats(format: format, to: url.path)
-            messageVM.alertMessage = "Exported \(count) conversations"
-            messageVM.showAlert = true
+            if !messageVM.showAlert {
+                messageVM.alertMessage = count == 0 ? "No conversations exported" : "Exported \(count) conversations"
+                messageVM.showAlert = true
+            }
         }
     }
 
