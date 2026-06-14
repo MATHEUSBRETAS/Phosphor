@@ -26,6 +26,12 @@ final class MessageExporter {
     private lazy var participantsByChat: [Int: [String]] = {
         (try? loadParticipantsByChat()) ?? [:]
     }()
+    /// Cache attachment filename -> backup disk path during an export session.
+    /// HTML and mbox exports may resolve the same attachment filename multiple
+    /// times while staging/copying/embedding; avoid repeated SHA-1 work and
+    /// filesystem existence checks for large attachment-heavy conversations.
+    private var attachmentDiskPathCache: [String: String] = [:]
+    private var missingAttachmentDiskPaths: Set<String> = []
 
     init(databasePath: String, backupPath: String? = nil, contacts: ContactDirectory = .empty) throws {
         self.db = try SQLiteReader(path: databasePath)
@@ -369,6 +375,8 @@ final class MessageExporter {
     /// path is known or the file does not exist.
     func resolveAttachmentDiskPath(filename: String) -> String? {
         guard let backupPath else { return nil }
+        if let cached = attachmentDiskPathCache[filename] { return cached }
+        if missingAttachmentDiskPaths.contains(filename) { return nil }
 
         // sms.db stores attachment filenames as device-absolute paths beginning
         // with `~/Library/SMS/Attachments/...`. The backup keeps them under the
@@ -382,7 +390,11 @@ final class MessageExporter {
         let domainKey = "MediaDomain-\(relative)"
         let hash = MessageExporter.sha1Hex(domainKey)
         let candidate = "\(backupPath)/\(String(hash.prefix(2)))/\(hash)"
-        if FileManager.default.fileExists(atPath: candidate) { return candidate }
+        if FileManager.default.fileExists(atPath: candidate) {
+            attachmentDiskPathCache[filename] = candidate
+            return candidate
+        }
+        missingAttachmentDiskPaths.insert(filename)
         return nil
     }
 
@@ -503,10 +515,19 @@ final class MessageExporter {
     // MARK: - Private Export Implementations
 
     private func exportCSV(messages: [Message], chatTitle: String, to path: String) throws {
-        var lines: [String] = []
-        lines.reserveCapacity(messages.count + 1)
-        lines.append("Date,Sender,Text,Reactions,Service")
+        let outputURL = URL(fileURLWithPath: path)
+        try? FileManager.default.removeItem(at: outputURL)
+        FileManager.default.createFile(atPath: path, contents: nil)
+        let handle = try FileHandle(forWritingTo: outputURL)
+        defer { try? handle.close() }
 
+        func append(_ chunk: String) throws {
+            if let data = chunk.data(using: .utf8) {
+                try handle.write(contentsOf: data)
+            }
+        }
+
+        try append("Date,Sender,Text,Reactions,Service\n")
         for msg in messages {
             let text = (msg.text ?? "")
                 .replacingOccurrences(of: "\"", with: "\"\"")
@@ -514,31 +535,35 @@ final class MessageExporter {
             let reactions = msg.reactions
                 .map { "\($0.sender): \($0.type.label)" }
                 .joined(separator: "; ")
-            lines.append("\"\(msg.formattedDate)\",\"\(msg.senderLabel)\",\"\(text)\",\"\(reactions)\",\"\(msg.service)\"")
+            try append("\"\(msg.formattedDate)\",\"\(msg.senderLabel)\",\"\(text)\",\"\(reactions)\",\"\(msg.service)\"\n")
         }
-
-        let csv = lines.joined(separator: "\n") + "\n"
-        try csv.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
     private func exportPlainText(messages: [Message], chatTitle: String, to path: String) throws {
-        var lines: [String] = []
-        lines.reserveCapacity(messages.count * 4 + 4)
-        lines.append("Conversation: \(chatTitle)")
-        lines.append("Exported by Phosphor")
-        lines.append(String(repeating: "-", count: 60))
-        lines.append("")
+        let outputURL = URL(fileURLWithPath: path)
+        try? FileManager.default.removeItem(at: outputURL)
+        FileManager.default.createFile(atPath: path, contents: nil)
+        let handle = try FileHandle(forWritingTo: outputURL)
+        defer { try? handle.close() }
 
-        for msg in messages {
-            lines.append("[\(msg.formattedDate)] \(msg.senderLabel):")
-            lines.append(msg.displayText)
-            for reaction in msg.reactions {
-                lines.append("   \(reaction.type.emoji) \(reaction.sender)")
+        func append(_ chunk: String) throws {
+            if let data = chunk.data(using: .utf8) {
+                try handle.write(contentsOf: data)
             }
-            lines.append("")
         }
 
-        try (lines.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+        try append("Conversation: \(chatTitle)\n")
+        try append("Exported by Phosphor\n")
+        try append(String(repeating: "-", count: 60) + "\n\n")
+
+        for msg in messages {
+            try append("[\(msg.formattedDate)] \(msg.senderLabel):\n")
+            try append("\(msg.displayText)\n")
+            for reaction in msg.reactions {
+                try append("   \(reaction.type.emoji) \(reaction.sender)\n")
+            }
+            try append("\n")
+        }
     }
 
     /// Copy referenced attachments into a sibling `<export>_attachments` folder so the

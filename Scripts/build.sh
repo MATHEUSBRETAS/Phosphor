@@ -15,6 +15,11 @@ echo "==> Building Phosphor..."
 
 cd "$PROJECT_DIR"
 
+if [ -x "$PROJECT_DIR/Scripts/regression-tests.py" ]; then
+    echo "==> Running regression checks..."
+    "$PROJECT_DIR/Scripts/regression-tests.py"
+fi
+
 # Build release binary
 swift build -c release 2>&1
 
