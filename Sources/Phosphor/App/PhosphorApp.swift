@@ -16,6 +16,10 @@ final class PhosphorAppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+
     private func ensureWindowSoon() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             let hasVisibleWindow = NSApp.windows.contains { $0.isVisible && !$0.isMiniaturized }

@@ -78,6 +78,15 @@ def test_attachment_path_cache_invariants() -> None:
     assert_contains(src, "missingAttachmentDiskPaths.insert(filename)", "resolver should store negative cache")
 
 
+def test_app_lifecycle_quits_after_last_window_closes() -> None:
+    src = read("Sources/Phosphor/App/PhosphorApp.swift")
+    assert_contains(src, "applicationShouldTerminateAfterLastWindowClosed", "Phosphor should quit when the last app window closes")
+    assert_contains(src, "-> Bool {\n        true\n    }", "last-window-close delegate should return true")
+    assert_contains(src, "applicationShouldHandleReopen", "Dock/app reopen should recreate a missing window")
+    assert_contains(src, "ensureWindowSoon()", "reopen recovery should keep using the no-window guard")
+    assert_true("CommandGroup(replacing: .newItem)" not in src, "do not remove SwiftUI's standard New Window command")
+
+
 def test_minimal_sms_schema_fixture_supports_limited_attachment_query() -> None:
     # Fixture for the limited attachment-loading query shape: only requested IDs
     # should be returned, so search/global paths do not load all attachments.
