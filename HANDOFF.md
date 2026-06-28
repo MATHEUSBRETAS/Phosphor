@@ -1,34 +1,42 @@
-<!-- Last session: 2026-06-08 -->
+<!-- Last session: 2026-06-28 -->
 # Phosphor - Handoff
 
 ## Current Objective
-v1.0.7 SHIPPED. Signed + notarized + stapled DMG published; Homebrew tap bumped. This release bundles two things:
-1. PR #17 messages overhaul (already on main from prior cycle).
-2. PR #19 "harden macOS dependency and backup flows" (external contributor AJV20) - reviewed, approved, squash-merged (`5156c3b`).
+v1.0.8 release cycle. Apple-redesigned brand assets + 5 contributor PRs integrated + all open issues triaged/closed.
 
-## What Shipped in #19 (reviewed + merged)
-- `Sources/Phosphor/Utilities/Shell.swift` - `Shell.run` now actually enforces its `timeout` param (was accepted but ignored); reads stdout/stderr on separate dispatch queues to kill a potential pipe-buffer deadlock; PATH-injection logic extracted to `environmentWithToolPaths()` and applied to both sync `run` and `runAsync`; dropped `ifuse` from `checkDependencies()`; pymobiledevice3 detection now uses `PyMobileDevice.available()` instead of `python3 -c import`.
-- `Sources/Phosphor/Services/NativeBackupService.swift` - REMOVED the silent auto-`pip3 install pymobiledevice3`; replaced with a guard + install guidance. Backup/restore now go through `PyMobileDevice.runAsync`.
-- `Sources/Phosphor/Utilities/PyMobileDevice.swift` - `directBinaryWorks(at:)` validates console-script shims (`<path> version`) before caching, preventing stale-shim false positives.
-- `Sources/Phosphor/Services/BackupManager.swift` - new `backupDirectoryWarning(for:)` (cloud-synced folder check), new corrupt/zero-length backup error hint, `defaultBackupDir` -> `systemMobileSyncDir` for the MobileSync-specific TCC message.
-- `FileTransferManager`/`MusicTransferManager`/`LiveDeviceBrowser` - guard `Shell.which("ifuse")` before the legacy ifuse fallback; `LiveDeviceBrowser` caches DCIM folder list at mount and counts during scan (no double scan; `photoCount` is 0 until first scan).
-- View files - `#Preview` blocks wrapped in `#if canImport(PreviewsMacros)` so `swift build` works under Command Line Tools; SettingsView surfaces the cloud-folder warning; pip3 -> pipx guidance throughout README/UI strings.
-- `Resources/Info.plist` - `CFBundleShortVersionString` 1.0.7, `CFBundleVersion` 7 (`803da13`).
+## What Shipped in 1.0.8
+### Branding (commit d623494)
+- AppIcon.svg rebuilt in Apple design language: macOS material squircle (Big Sur grid 824/1024, 185 corner), SF Pro Heavy "P" as a vector path (font-independent), top-light gradient, base shade, soft drop shadow, beveled rim. No neon/scanlines/circuit clutter.
+- AppIcon.icns rebuilt all sizes 16-1024.
+- banner.svg/png rebuilt (dark, indigo halo, embedded icon, SF Pro wordmark as paths). README uses banner.png (GitHub sanitizes SVG <image>).
+- og-image.png (1200x630) added; docs/index.html got og:image, twitter card, theme-color, clean P favicon.
+- README: star-history chart added.
 
-## Open Review Nits from #19 (non-blocking, future cleanup)
-- `Shell.swift`: theoretical data race on captured `stdoutData/stderrData` if a pipe read hangs past the 2s grace window after a timeout kill (worst case = garbled stderr string, no crash).
-- `Shell.swift`: timeout termination escalates SIGTERM -> SIGINT, no SIGKILL fallback for a truly wedged child.
-- `LiveDeviceBrowser`: `photoCount` reads 0 until the first scan runs (intentional perf tradeoff).
+### Merged PRs (all from AJV20, reviewed via adversarial multi-agent workflow; reviewer + verifier both agreed merge; each builds clean + regression green)
+- #26 chore: PR scope guard + split regression runner (Scripts/regression/).
+- #25 fix: reopen Phosphor windows reliably -> FIXES issue #27 (frozen on intro screen, Tahoe). NSApplicationDelegateAdaptor reopen guard for 0-window launches.
+- #20 perf: startup defer + streaming exports (FileHandle, remove-before-write truncation) + lazy manifest sizes.
+- #23 ux: message export flow (MessageExportOptions date-range/includeAttachments, backup picker, Export All, background export Task).
+- #24 feat: Wi-Fi/network device discovery (usbmux list --usb/--network merge, USB-precedence dedupe), network selection preserved through scheduled/manual backups.
 
-## Release Verification
-- Tag: `v1.0.7` -> https://github.com/momenbasel/Phosphor/releases/tag/v1.0.7
-- DMG SHA256: `843697a2e8e3f0634e50e640b0bd608892f6ccbf9704863cd64d686cd435b968` (verified identical to the published release asset).
-- Notarization: status **Accepted** (submission `033830ff-a1e5-48fb-8b3d-4d9f635aff28`), stapled, `spctl` accepted (Notarized Developer ID).
-- In-repo cask `Homebrew/phosphor.rb` bumped + pushed (`b2c2b72`).
-- External tap `momenbasel/homebrew-phosphor@2bc474c` bumped to 1.0.7; `brew info --cask phosphor` reports 1.0.7.
-- AC_NOTARY keychain profile (re)provisioned from `~/.appstoreconnect/private_keys/` (key id `5G7R52L8RK`).
+### Merge conflict resolution note
+- MessageExporter.swift: #20 (streaming) vs #23 (options API) resolved to keep BOTH - exportHTML/exportMbox take `includeAttachments` AND stream via FileHandle; exportChat/exportMessages take `MessageExportOptions`. Build + 8 regression checks pass.
+
+## Release Verification (filled by release-local.sh)
+- Tag: v1.0.8
+- DMG SHA256: <computed by release-local.sh>
+- Notarization: <status>
+- In-repo cask Homebrew/phosphor.rb bumped by release-local.sh.
+- External tap momenbasel/homebrew-phosphor ALSO bumped to 1.0.8 with the SAME SHA (issue #21 root cause: tap SHA drift).
+
+## Issues - all closed this cycle
+- #27 frozen intro (Tahoe): fixed by #25, closed referencing v1.0.8.
+- #22 macOS-on-Proxmox launch error: responded (VM/Gatekeeper guidance), closed.
+- #21 Homebrew SHA-256 mismatch: fixed - v1.0.8 cask SHA matches the published DMG in both in-repo cask and external tap.
+- #18 Android/non-iOS iPod support: out of scope (native macOS/iOS-only), closed.
+- #2 Windows/Linux: out of scope (native SwiftUI/macOS), closed.
 
 ## Next Steps / Open Items
-- Open issues #18 and #2 are platform-expansion feature requests (Windows/Linux) - not actionable this cycle.
-- `attributedBody` typedstream parsing still unimplemented - a small fraction of iOS 16+ messages have empty `text` with content in the NSArchiver blob. Future: byte-scan the UTF-8 segment or `NSUnarchiver`.
-- Consider folding the three #19 review nits into a small `Shell.swift` hardening pass next time that file is touched.
+- attributedBody typedstream parsing still unimplemented (small fraction of iOS 16+ messages have empty text).
+- Shell.swift hardening nits from #19 (SIGKILL fallback, stdout/stderr race) still pending.
+- Stale local branches from this session's gh-pr-checkout pollution (pr20/pr23/pr24, perf/*, fix/*, feat/*, chore/*) can be pruned.

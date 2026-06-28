@@ -295,6 +295,16 @@ Phosphor now surfaces the underlying `pymobiledevice3` and `idevicebackup2` stde
 
 For encrypted backup issues, verify the device has a passcode set and that `pymobiledevice3 backup2 encryption` reports the expected state.
 
+## Star History
+
+<a href="https://star-history.com/#momenbasel/Phosphor&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=momenbasel/Phosphor&type=Date&theme=dark">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=momenbasel/Phosphor&type=Date">
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=momenbasel/Phosphor&type=Date" width="600">
+  </picture>
+</a>
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
