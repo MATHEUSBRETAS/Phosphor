@@ -19,6 +19,9 @@ jobs:
       - name: Install Dependencies
         run: brew install libimobiledevice
 
+      - name: Run Regression Checks
+        run: Scripts/regression/run.py
+
       - name: Build Debug
         run: swift build
 
