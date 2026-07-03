@@ -18,6 +18,19 @@ enum Shell {
         private var stdoutData = Data()
         private var stderrData = Data()
         private var didFinish = false
+        private var watchdog: Task<Void, Never>?
+
+        /// Hand the timeout watchdog to the state so it can be cancelled the moment the
+        /// command finishes. Without this the watchdog sleeps the full timeout (default
+        /// 300s) after the process already exited, holding the pipe file descriptors open
+        /// the whole time — under Phosphor's frequent device probes that leaks fds.
+        func attachWatchdog(_ task: Task<Void, Never>) {
+            lock.lock()
+            let alreadyFinished = didFinish
+            if !alreadyFinished { watchdog = task }
+            lock.unlock()
+            if alreadyFinished { task.cancel() }
+        }
 
         func append(_ data: Data, toStdout: Bool) {
             guard !data.isEmpty else { return }
@@ -44,6 +57,8 @@ enum Shell {
                 return nil
             }
             didFinish = true
+            let pendingWatchdog = watchdog
+            watchdog = nil
             let stdout = stdoutData
             var stderr = String(data: stderrData, encoding: .utf8) ?? ""
             if timedOut {
@@ -51,6 +66,9 @@ enum Shell {
                 stderr = stderr.isEmpty ? timeoutMessage : stderr + "\n" + timeoutMessage
             }
             lock.unlock()
+
+            // Free the watchdog's captured Process/pipe references immediately.
+            pendingWatchdog?.cancel()
 
             return Result(
                 exitCode: timedOut ? -2 : exitCode,
@@ -169,10 +187,13 @@ enum Shell {
                 state.append(stdoutPipe.fileHandleForReading.availableData, toStdout: true)
                 state.append(stderrPipe.fileHandleForReading.availableData, toStdout: false)
 
+                // On the timed-out path the process may not be reaped yet; reading
+                // terminationStatus while it is still running throws. state.finish
+                // ignores the exit code for timeouts, so pass a placeholder there.
                 guard let result = state.finish(
                     timedOut: timedOut,
                     timeout: timeout,
-                    exitCode: process.terminationStatus
+                    exitCode: timedOut ? -1 : process.terminationStatus
                 ) else {
                     return
                 }
@@ -207,23 +228,24 @@ enum Shell {
                 return
             }
 
-            Task {
+            let watchdogTask = Task {
                 let nanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
                 try? await Task.sleep(nanoseconds: nanoseconds)
-                guard !state.hasFinished() else { return }
+                guard !Task.isCancelled, !state.hasFinished() else { return }
 
                 process.terminate()
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
-                guard !state.hasFinished() else { return }
+                guard !Task.isCancelled, !state.hasFinished() else { return }
 
                 process.interrupt()
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard !state.hasFinished() else { return }
+                guard !Task.isCancelled, !state.hasFinished() else { return }
 
                 Darwin.kill(process.processIdentifier, SIGKILL)
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 finish(timedOut: true)
             }
+            state.attachWatchdog(watchdogTask)
         }
     }
 

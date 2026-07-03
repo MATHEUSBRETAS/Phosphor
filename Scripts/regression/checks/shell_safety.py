@@ -41,6 +41,14 @@ def test_shell_run_async_does_not_block_global_dispatch_workers(root: Path) -> N
     assert "DispatchQueue.global" not in body, "Shell.runAsync must not allocate a global queue worker per process"
 
 
+def test_shell_run_async_cancels_timeout_watchdog_on_finish(root: Path) -> None:
+    src = read(root, "Sources/Phosphor/Utilities/Shell.swift")
+    body = swift_block_after(src, "static func runAsync(_ command: String")
+    assert "attachWatchdog" in body, "runAsync should hand its timeout watchdog to the state so it can be cancelled early"
+    assert "pendingWatchdog?.cancel()" in src, "finish should cancel the watchdog so pipe fds are freed the moment the command completes"
+    assert "timedOut ? -1 : process.terminationStatus" in body, "runAsync must not read terminationStatus on the timed-out path (process may still be running)"
+
+
 def test_no_crash_only_swift_shortcuts(root: Path) -> None:
     offenders: list[str] = []
     for path in (root / "Sources").rglob("*.swift"):

@@ -301,14 +301,25 @@ final class BackupManager: ObservableObject {
         lastError = nil
     }
 
+    /// True when a backup metadata file exists AND has real content. An interrupted
+    /// backup often leaves zero-length Info.plist / Manifest.* stubs; treating those
+    /// as complete makes incremental backups fail with MBErrorDomain/205 (the exact
+    /// "cannot parse null plist" failure the completeness check exists to prevent).
+    static func isNonEmptyFile(_ path: String) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attributes[.size] as? UInt64 else {
+            return false
+        }
+        return size > 0
+    }
+
     /// True when `path` looks like a single iOS backup folder (UDID dir with Info.plist + Manifest.*).
     static func looksLikeBackupFolder(_ path: String) -> Bool {
-        let fm = FileManager.default
         let info = (path as NSString).appendingPathComponent("Info.plist")
         let manifestPlist = (path as NSString).appendingPathComponent("Manifest.plist")
         let manifestDb = (path as NSString).appendingPathComponent("Manifest.db")
-        return fm.fileExists(atPath: info) &&
-               (fm.fileExists(atPath: manifestPlist) || fm.fileExists(atPath: manifestDb))
+        return isNonEmptyFile(info) &&
+               (isNonEmptyFile(manifestPlist) || isNonEmptyFile(manifestDb))
     }
 
     static func backupPath(for udid: String, in directory: String? = nil) -> String {
@@ -762,9 +773,15 @@ final class BackupManager: ObservableObject {
     // MARK: - Selective Extract
 
     private func extractionDestination(for entry: BackupManifest.FileEntry, under destination: String) -> String {
-        let safeDomain = entry.domain
+        var safeDomain = entry.domain
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: ":", with: "_")
+        // A crafted/corrupt Manifest.db row could set domain to "." or ".." to walk
+        // out of the destination directory. Slashes are already neutralized above, so
+        // only the bare current-/parent-dir tokens remain dangerous.
+        if safeDomain == "." || safeDomain == ".." || safeDomain.isEmpty {
+            safeDomain = "_"
+        }
         let relativeComponents = entry.relativePath
             .split(separator: "/")
             .map(String.init)
@@ -789,8 +806,19 @@ final class BackupManager: ObservableObject {
         let manifest = try BackupManifest(backupPath: backup.path)
         var extracted = 0
 
+        let destinationRoot = ((destination as NSString).standardizingPath as NSString)
+            .appendingPathComponent("")
+
         for entry in entries where entry.isFile {
             let destPath = extractionDestination(for: entry, under: destination)
+            // Defense in depth: never write outside the chosen destination even if a
+            // manifest row slipped a traversal token past sanitization.
+            let standardized = (destPath as NSString).standardizingPath
+            guard standardized == (destination as NSString).standardizingPath
+                    || standardized.hasPrefix(destinationRoot) else {
+                lastError = "Refusing to extract \(entry.fileName) outside the destination folder."
+                continue
+            }
             do {
                 try manifest.extractFile(entry, to: destPath)
                 extracted += 1

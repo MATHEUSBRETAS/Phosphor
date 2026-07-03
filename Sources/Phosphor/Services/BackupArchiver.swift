@@ -27,6 +27,17 @@ enum BackupArchiver {
             .filter { !$0.isEmpty }
     }
 
+    /// Strip a leading `./` (repeatedly) so `./UDID/Info.plist` and `UDID/Info.plist`
+    /// collapse to the same top-level directory. tar writes both to the same place, so
+    /// collision detection must see them identically or an existing backup gets clobbered.
+    private static func normalizedEntryPath(_ entry: String) -> String {
+        var normalized = entry
+        while normalized.hasPrefix("./") {
+            normalized.removeFirst(2)
+        }
+        return normalized
+    }
+
     private static func archiveEntryIsSafe(_ entry: String) -> Bool {
         guard !entry.hasPrefix("/") else { return false }
         let components = entry.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
@@ -35,17 +46,27 @@ enum BackupArchiver {
 
     private static func topLevelEntries(in entries: [String]) -> Set<String> {
         Set(entries.compactMap { entry in
-            entry.split(separator: "/", omittingEmptySubsequences: true).first.map(String.init)
-        })
+            normalizedEntryPath(entry)
+                .split(separator: "/", omittingEmptySubsequences: true)
+                .first
+                .map(String.init)
+        }).subtracting(["."])
+    }
+
+    private static func isNonEmptyFile(_ path: String) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attributes[.size] as? UInt64 else {
+            return false
+        }
+        return size > 0
     }
 
     private static func looksLikeBackupFolder(_ path: String) -> Bool {
-        let fm = FileManager.default
         let info = (path as NSString).appendingPathComponent("Info.plist")
         let manifestPlist = (path as NSString).appendingPathComponent("Manifest.plist")
         let manifestDb = (path as NSString).appendingPathComponent("Manifest.db")
-        return fm.fileExists(atPath: info) &&
-               (fm.fileExists(atPath: manifestPlist) || fm.fileExists(atPath: manifestDb))
+        return isNonEmptyFile(info) &&
+               (isNonEmptyFile(manifestPlist) || isNonEmptyFile(manifestDb))
     }
 
     private static func moveImportedEntriesToTrash(_ entries: Set<String>, in destination: String) {

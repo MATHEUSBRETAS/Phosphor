@@ -109,6 +109,7 @@ def test_incremental_backups_require_existing_metadata(root: Path) -> None:
     assert_contains(manager, "if Self.looksLikeBackupFolder(dir)", "Single-backup discovery should exclude Info.plist-only incomplete folders")
     assert_contains(manager, "guard Self.looksLikeBackupFolder(fullPath) else { continue }", "Backup discovery should exclude incomplete child backup folders")
     assert_contains(manager, "looksLikeBackupFolder(deviceDirectory) ? .complete : .incomplete", "Existing-backup preflight should require Info.plist and Manifest metadata")
+    assert_contains(manager, "isNonEmptyFile(info)", "Completeness must require non-empty metadata; zero-length Info.plist stubs are an interrupted backup, not a complete one")
     assert_contains(manager, "Backup needs a full backup first", "Incremental backup should fail before backend calls when metadata is missing")
     assert_contains(manager, "Run a full backup first; future Wi-Fi backups can be incremental", "Missing metadata error should be actionable")
     assert_contains(manager, "deleteIncompleteBackup(for udid", "Recovery flow should be able to remove interrupted partial backup folders")
@@ -176,6 +177,9 @@ def test_phosphor_archive_import_uses_active_dir_and_rejects_unsafe_archives(roo
     assert_contains(archiver, "guard !entry.hasPrefix(\"/\")", "Archive import should reject absolute tar paths")
     assert_contains(archiver, "!components.contains(\"..\")", "Archive import should reject parent-directory traversal entries")
     assert_contains(archiver, "topLevelEntries(in: entries).intersection(existingDirs)", "Archive import should not overwrite an existing backup directory")
+    assert_contains(archiver, "normalizedEntryPath", "Archive import must normalize leading ./ so overwrite detection is not bypassable")
+    assert_contains(archiver, 'subtracting(["."])', "Top-level entry set must drop the current-directory token so ./ entries map to their real directory")
+    assert_contains(archiver, "isNonEmptyFile(info)", "Archive import completeness must require a non-empty Info.plist, not just its presence")
     assert_contains(archiver, "looksLikeBackupFolder(itemPath)", "Archive import should only report complete backup folders as imported")
     assert_contains(archiver, "moveImportedEntriesToTrash", "Failed archive imports should clean up newly extracted entries")
     assert_contains(archiver, "archive did not contain a complete iOS backup", "Invalid safe archives should fail with a clear reason")
@@ -219,6 +223,8 @@ def test_backup_extract_preserves_domain_relative_paths(root: Path) -> None:
     assert_contains(manager, "private func extractionDestination(for entry", "Backup extraction should centralize safe destination path construction")
     assert_contains(manager, "appendingPathComponent(safeDomain)", "Backup extraction should group files by domain to avoid basename collisions")
     assert_contains(manager, "entry.relativePath", "Backup extraction should preserve manifest relative paths instead of flattening to fileName")
+    assert_contains(manager, 'safeDomain == "." || safeDomain == ".."', "Selective extraction must neutralize traversal domains so a crafted manifest row cannot escape the destination")
+    assert_contains(manager, "Refusing to extract", "Selective extraction should refuse to write outside the destination folder")
     assert_not_contains(manager, "appendingPathComponent(entry.fileName)\n            do {", "Backup extraction should not flatten every selected file to destination/fileName")
 
 
