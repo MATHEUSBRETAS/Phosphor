@@ -18,6 +18,66 @@ enum BackupArchiver {
         let archiveSize: UInt64
     }
 
+    private static func archiveEntries(at path: String) async -> [String]? {
+        let result = await Shell.runAsync("tar", arguments: ["-tzf", path])
+        guard result.succeeded else { return nil }
+        return result.output
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Strip a leading `./` (repeatedly) so `./UDID/Info.plist` and `UDID/Info.plist`
+    /// collapse to the same top-level directory. tar writes both to the same place, so
+    /// collision detection must see them identically or an existing backup gets clobbered.
+    private static func normalizedEntryPath(_ entry: String) -> String {
+        var normalized = entry
+        while normalized.hasPrefix("./") {
+            normalized.removeFirst(2)
+        }
+        return normalized
+    }
+
+    private static func archiveEntryIsSafe(_ entry: String) -> Bool {
+        guard !entry.hasPrefix("/") else { return false }
+        let components = entry.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        return !components.contains("..")
+    }
+
+    private static func topLevelEntries(in entries: [String]) -> Set<String> {
+        Set(entries.compactMap { entry in
+            normalizedEntryPath(entry)
+                .split(separator: "/", omittingEmptySubsequences: true)
+                .first
+                .map(String.init)
+        }).subtracting(["."])
+    }
+
+    private static func isNonEmptyFile(_ path: String) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let size = attributes[.size] as? UInt64 else {
+            return false
+        }
+        return size > 0
+    }
+
+    private static func looksLikeBackupFolder(_ path: String) -> Bool {
+        let info = (path as NSString).appendingPathComponent("Info.plist")
+        let manifestPlist = (path as NSString).appendingPathComponent("Manifest.plist")
+        let manifestDb = (path as NSString).appendingPathComponent("Manifest.db")
+        return isNonEmptyFile(info) &&
+               (isNonEmptyFile(manifestPlist) || isNonEmptyFile(manifestDb))
+    }
+
+    private static func moveImportedEntriesToTrash(_ entries: Set<String>, in destination: String) {
+        let fm = FileManager.default
+        for item in entries {
+            let path = (destination as NSString).appendingPathComponent(item)
+            var trashedURL: NSURL?
+            try? fm.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: &trashedURL)
+        }
+    }
+
     // MARK: - Archive (Export)
 
     /// Create a .phosphor archive from a backup directory.
@@ -74,16 +134,38 @@ enum BackupArchiver {
         to backupDir: String? = nil,
         onProgress: @escaping (String) -> Void
     ) async -> String? {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let defaultDir = "\(home)/Library/Application Support/MobileSync/Backup"
-        let destination = backupDir ?? defaultDir
+        let destination: String
+        if let backupDir {
+            destination = backupDir
+        } else {
+            destination = await MainActor.run { BackupManager.activeBackupDir }
+        }
         let fm = FileManager.default
 
+        guard let entries = await archiveEntries(at: archivePath), !entries.isEmpty else {
+            onProgress("Import failed: archive could not be read")
+            return nil
+        }
+        guard entries.allSatisfy(archiveEntryIsSafe) else {
+            onProgress("Import failed: archive contains unsafe paths")
+            return nil
+        }
+
         // Ensure destination exists
-        try? fm.createDirectory(atPath: destination, withIntermediateDirectories: true)
+        do {
+            try fm.createDirectory(atPath: destination, withIntermediateDirectories: true)
+        } catch {
+            onProgress("Import failed: could not create backup directory: \(error.localizedDescription)")
+            return nil
+        }
 
         // Snapshot existing directories BEFORE extraction to detect new ones
         let existingDirs = Set(fm.sortedContents(atPath: destination))
+        let collisions = topLevelEntries(in: entries).intersection(existingDirs)
+        guard collisions.isEmpty else {
+            onProgress("Import failed: backup already exists (\(collisions.sorted().joined(separator: ", ")))")
+            return nil
+        }
 
         onProgress("Extracting backup archive...")
 
@@ -100,11 +182,10 @@ enum BackupArchiver {
             let currentDirs = Set(fm.sortedContents(atPath: destination))
             let newDirs = currentDirs.subtracting(existingDirs)
 
-            // Check each new directory for Info.plist (valid backup)
+            // Check each new directory for complete backup metadata.
             for item in newDirs {
                 let itemPath = (destination as NSString).appendingPathComponent(item)
-                let infoPlist = (itemPath as NSString).appendingPathComponent("Info.plist")
-                if fm.fileExists(atPath: infoPlist) {
+                if looksLikeBackupFolder(itemPath) {
                     return itemPath
                 }
             }
@@ -112,13 +193,16 @@ enum BackupArchiver {
             // Fallback: scan all for valid backup
             for item in currentDirs {
                 let itemPath = (destination as NSString).appendingPathComponent(item)
-                let infoPlist = (itemPath as NSString).appendingPathComponent("Info.plist")
-                if fm.fileExists(atPath: infoPlist) && !existingDirs.contains(item) {
+                if looksLikeBackupFolder(itemPath) && !existingDirs.contains(item) {
                     return itemPath
                 }
             }
+            moveImportedEntriesToTrash(newDirs, in: destination)
+            onProgress("Import failed: archive did not contain a complete iOS backup")
             return nil
         } else {
+            let currentDirs = Set(fm.sortedContents(atPath: destination))
+            moveImportedEntriesToTrash(currentDirs.subtracting(existingDirs), in: destination)
             onProgress("Import failed: \(result.stderr)")
             return nil
         }
@@ -134,10 +218,7 @@ enum BackupArchiver {
         let archiveSize = (try? fm.attributesOfItem(atPath: path)[.size] as? UInt64) ?? 0
 
         // List contents to find Info.plist
-        let listResult = await Shell.runAsync("tar", arguments: ["-tzf", path])
-        guard listResult.succeeded else { return nil }
-
-        let files = listResult.output.components(separatedBy: "\n")
+        guard let files = await archiveEntries(at: path), files.allSatisfy(archiveEntryIsSafe) else { return nil }
         guard let infoPlistEntry = files.first(where: { $0.hasSuffix("Info.plist") && !$0.contains("/") || $0.components(separatedBy: "/").count == 2 && $0.hasSuffix("Info.plist") }) else {
             return nil
         }

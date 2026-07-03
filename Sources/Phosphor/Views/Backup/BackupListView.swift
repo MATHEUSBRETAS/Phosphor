@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Lists all discovered iOS backups with metadata. Allows creating new backups and managing existing ones.
@@ -5,6 +6,7 @@ struct BackupListView: View {
 
     @EnvironmentObject var deviceVM: DeviceViewModel
     @EnvironmentObject var backupVM: BackupViewModel
+    var onBrowseBackup: () -> Void = {}
     @State private var showDeleteConfirm = false
     @State private var backupToDelete: BackupInfo?
     @State private var showImportArchive = false
@@ -14,6 +16,8 @@ struct BackupListView: View {
     @State private var showFullWiFiBackupConfirm = false
     @State private var pendingFullWiFiBackupUDID: String?
     @State private var pendingFullWiFiBackupPrefersNetwork = false
+    @State private var showIncompleteBackupTrashConfirm = false
+    @State private var pendingIncompleteBackupIssue: BackupManager.BackupFailure?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +48,8 @@ struct BackupListView: View {
 
             Divider()
 
+            backupStateNotice
+
             if backupVM.isCreating {
                 backupProgressView
             }
@@ -59,15 +65,17 @@ struct BackupListView: View {
                     subtitle: "Back up your device, or pick an existing backup folder via New Backup -> Open Existing Backup Folder.",
                     action: {
                         guard let device = deviceVM.selectedDevice else { return }
-                        startBackup(for: device, incremental: device.connectionType == .wifi)
+                        startBackup(for: device, incremental: shouldOfferIncremental(for: device))
                     },
-                    actionLabel: deviceVM.selectedDevice?.connectionType == .wifi ? "Create Incremental Wi-Fi Backup" : (deviceVM.selectedDevice != nil ? "Create Backup" : nil)
+                    actionLabel: emptyStateBackupActionLabel
                 )
             } else {
                 List {
                     ForEach(backupVM.backups) { backup in
                         BackupRow(backup: backup) {
-                            backupVM.openBackupBrowser(backup)
+                            if backupVM.openBackupBrowser(backup) {
+                                onBrowseBackup()
+                            }
                         } onDelete: {
                             backupToDelete = backup
                             showDeleteConfirm = true
@@ -94,6 +102,27 @@ struct BackupListView: View {
         } message: {
             Text(backupVM.alertMessage)
         }
+        .sheet(item: $backupVM.backupIssue) { issue in
+            BackupIssueSheet(
+                issue: issue,
+                primaryActionTitle: backupIssueActionTitle(for: issue),
+                primaryAction: { handleBackupIssueAction(issue) },
+                dismiss: { backupVM.backupIssue = nil }
+            )
+        }
+        .alert("Move Incomplete Backup to Trash?", isPresented: $showIncompleteBackupTrashConfirm) {
+            Button("Move to Trash & Run Full Backup", role: .destructive) {
+                if let issue = pendingIncompleteBackupIssue {
+                    Task { await backupVM.deleteIncompleteBackupAndRunFull(for: issue) }
+                }
+                pendingIncompleteBackupIssue = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingIncompleteBackupIssue = nil
+            }
+        } message: {
+            Text(incompleteBackupTrashConfirmationMessage)
+        }
         .alert("Full Wi-Fi Backup?", isPresented: $showFullWiFiBackupConfirm) {
             Button("Run Full Wi-Fi Backup") {
                 if let udid = pendingFullWiFiBackupUDID {
@@ -108,7 +137,7 @@ struct BackupListView: View {
                 pendingFullWiFiBackupPrefersNetwork = false
             }
         } message: {
-            Text("This device is connected over Wi-Fi. Full backups can be much slower and more sensitive to sleep/lock/network interruptions. Incremental Wi-Fi Backup is recommended unless you specifically need a full backup.")
+            Text(fullWiFiBackupConfirmationMessage)
         }
         .sheet(isPresented: $showScheduleSheet) {
             BackupScheduleSheet()
@@ -147,24 +176,72 @@ struct BackupListView: View {
         }
     }
 
+
+    @ViewBuilder
+    private var backupStateNotice: some View {
+        if let device = deviceVM.selectedDevice {
+            let state = backupState(for: device)
+            BackupStateNotice(title: state.title, detail: state.detail, icon: state.icon, tint: state.tint)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+        }
+    }
+
+    private func backupState(for device: DeviceInfo) -> (title: String, detail: String, icon: String, tint: Color) {
+        let hasCompleteBackup = shouldOfferIncremental(for: device)
+        if device.connectionType == .wifi {
+            if hasCompleteBackup {
+                return (
+                    "Wi-Fi backup ready",
+                    "Incremental Wi-Fi backups are available. Keep the device unlocked and on the same network while the backup runs.",
+                    "wifi",
+                    .blue
+                )
+            }
+            return (
+                "First backup must be full",
+                "USB is recommended for the first backup. Wi-Fi is supported, but it is slower and more sensitive to sleep, lock, and network interruptions.",
+                "externaldrive.badge.plus",
+                .orange
+            )
+        }
+
+        return (
+            hasCompleteBackup ? "USB backup ready" : "USB recommended for first backup",
+            hasCompleteBackup ? "USB is the fastest and most reliable way to refresh this backup." : "Create a full USB backup first. After that, incremental backups can update only changed files.",
+            "cable.connector",
+            .green
+        )
+    }
+
     @ViewBuilder
     private var backupCreationButtons: some View {
         if deviceVM.selectedDevice?.connectionType == .wifi {
-            Button {
-                guard let device = deviceVM.selectedDevice else { return }
-                startBackup(for: device, incremental: true)
-            } label: {
-                Label("Incremental Wi-Fi Backup (Recommended)", systemImage: "wifi")
+            if let device = deviceVM.selectedDevice, shouldOfferIncremental(for: device) {
+                Button {
+                    startBackup(for: device, incremental: true)
+                } label: {
+                    Label("Incremental Wi-Fi Backup (Recommended)", systemImage: "wifi")
+                }
+                .disabled(deviceVM.selectedDevice == nil)
+            } else {
+                Button {
+                    guard let device = deviceVM.selectedDevice else { return }
+                    startBackup(for: device, incremental: false)
+                } label: {
+                    Label("First Wi-Fi Backup (Full)", systemImage: "externaldrive.badge.plus")
+                }
+                .disabled(deviceVM.selectedDevice == nil)
             }
-            .disabled(deviceVM.selectedDevice == nil)
 
-            Button {
-                guard let device = deviceVM.selectedDevice else { return }
-                startBackup(for: device, incremental: false)
-            } label: {
-                Label("Full Wi-Fi Backup (Slower)", systemImage: "externaldrive.badge.plus")
+            if let device = deviceVM.selectedDevice, shouldOfferIncremental(for: device) {
+                Button {
+                    startBackup(for: device, incremental: false)
+                } label: {
+                    Label("Full Wi-Fi Backup (Slower)", systemImage: "externaldrive.badge.plus")
+                }
+                .disabled(deviceVM.selectedDevice == nil)
             }
-            .disabled(deviceVM.selectedDevice == nil)
         } else {
             Button {
                 guard let device = deviceVM.selectedDevice else { return }
@@ -181,6 +258,72 @@ struct BackupListView: View {
                 Label("Incremental Backup", systemImage: "arrow.triangle.2.circlepath")
             }
             .disabled(deviceVM.selectedDevice == nil)
+        }
+    }
+
+    private var emptyStateBackupActionLabel: String? {
+        guard let device = deviceVM.selectedDevice else { return nil }
+        if device.connectionType == .wifi {
+            return shouldOfferIncremental(for: device) ? "Create Incremental Wi-Fi Backup" : "Create Full Wi-Fi Backup"
+        }
+        return "Create Backup"
+    }
+
+    private var fullWiFiBackupConfirmationMessage: String {
+        guard let device = deviceVM.selectedDevice else {
+            return "This device is connected over Wi-Fi. Full backups can be slower and more sensitive to interruptions."
+        }
+        if shouldOfferIncremental(for: device) {
+            return "This device is connected over Wi-Fi. Full backups can be much slower and more sensitive to sleep, lock, and network interruptions. Incremental Wi-Fi Backup is recommended unless you specifically need a full backup."
+        }
+        return "This is the first backup for this device, so it must be a full backup. USB is recommended for the first backup; Wi-Fi is supported but slower and more sensitive to sleep, lock, and network interruptions."
+    }
+
+    private var incompleteBackupTrashConfirmationMessage: String {
+        guard let issue = pendingIncompleteBackupIssue else { return "This will move the incomplete backup folder to Trash." }
+        let path = issue.recoveryPath ?? issue.technicalDetails ?? "Unknown path"
+        let device = issue.udid.map { " for device \($0)" } ?? ""
+        return "This will move this incomplete backup folder\(device) to Trash, then run a full backup:\n\n\(path)\n\nPhosphor will not permanently delete the folder. You can restore it from Trash if needed."
+    }
+
+    private func shouldOfferIncremental(for device: DeviceInfo) -> Bool {
+        BackupManager.hasExistingBackup(for: device.id) && backupVM.backups.contains { backup in
+            backup.udid == device.id || backup.id == device.id
+        }
+    }
+
+
+    private func backupIssueActionTitle(for issue: BackupManager.BackupFailure) -> String? {
+        switch issue.recoveryAction {
+        case .runFullBackup:
+            return "Run Full Backup"
+        case .deleteIncompleteAndRunFull:
+            return "Delete Incomplete Backup & Run Full"
+        case .openBackupSettings:
+            return "Open Backup Settings"
+        case .retry:
+            return "Retry"
+        case .none:
+            return nil
+        }
+    }
+
+    private func handleBackupIssueAction(_ issue: BackupManager.BackupFailure) {
+        switch issue.recoveryAction {
+        case .runFullBackup:
+            backupVM.backupIssue = nil
+            Task { await backupVM.runFullBackup(for: issue) }
+        case .deleteIncompleteAndRunFull:
+            pendingIncompleteBackupIssue = issue
+            backupVM.backupIssue = nil
+            showIncompleteBackupTrashConfirm = true
+        case .openBackupSettings:
+            backupVM.backupIssue = nil
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        case .retry:
+            Task { await backupVM.retryLastBackup() }
+        case .none:
+            backupVM.backupIssue = nil
         }
     }
 
@@ -261,6 +404,89 @@ struct BackupListView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(Color.orange.opacity(0.08))
+    }
+}
+
+
+struct BackupStateNotice: View {
+    let title: String
+    let detail: String
+    let icon: String
+    let tint: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(tint.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct BackupIssueSheet: View {
+    let issue: BackupManager.BackupFailure
+    let primaryActionTitle: String?
+    let primaryAction: () -> Void
+    let dismiss: () -> Void
+    @State private var showTechnicalDetails = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.system(size: 24))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(issue.title)
+                        .font(.title3.weight(.semibold))
+                    Text(issue.message)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+
+            if let details = issue.technicalDetails, !details.isEmpty {
+                DisclosureGroup("Technical details", isExpanded: $showTechnicalDetails) {
+                    ScrollView {
+                        Text(details)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                    }
+                    .frame(minHeight: 90, maxHeight: 220)
+                    .background(Color.secondary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                if let primaryActionTitle {
+                    Button(primaryActionTitle, role: issue.recoveryAction == .deleteIncompleteAndRunFull ? .destructive : nil) {
+                        primaryAction()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 520)
     }
 }
 
@@ -439,8 +665,13 @@ struct BackupScheduleSheet: View {
                             .frame(width: 100)
                         }
 
-                        Toggle("Wi-Fi only (skip if USB not available)", isOn: $scheduler.schedule.wifiOnly)
-                        Toggle("Incremental only (faster)", isOn: $scheduler.schedule.incrementalOnly)
+                        Toggle("Wi-Fi only (skip if Wi-Fi is not available)", isOn: $scheduler.schedule.wifiOnly)
+                        Toggle("Incremental when possible (faster)", isOn: $scheduler.schedule.incrementalOnly)
+                        if scheduler.schedule.incrementalOnly {
+                            Text("The first scheduled run will create the required full backup if this device does not already have complete backup metadata.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -499,13 +730,9 @@ struct BackupScheduleSheet: View {
             }
             .formStyle(.grouped)
         }
-        .onChange(of: scheduler.schedule.enabled) { _, enabled in
-            if enabled {
-                scheduler.updateNextRunDate()
-                scheduler.startMonitoring()
-            } else {
-                scheduler.stopMonitoring()
-            }
-        }
+        .onChange(of: scheduler.schedule.enabled) { _, _ in scheduler.updateNextRunDate() }
+        .onChange(of: scheduler.schedule.frequency) { _, _ in scheduler.updateNextRunDate() }
+        .onChange(of: scheduler.schedule.preferredHour) { _, _ in scheduler.updateNextRunDate() }
+        .onChange(of: scheduler.schedule.preferredMinute) { _, _ in scheduler.updateNextRunDate() }
     }
 }

@@ -11,6 +11,7 @@ final class BackupViewModel: ObservableObject {
     @Published var progressText = ""
     @Published var showAlert = false
     @Published var alertMessage = ""
+    @Published var backupIssue: BackupManager.BackupFailure?
     @Published var loadError: String?
 
     // Browser state
@@ -23,13 +24,29 @@ final class BackupViewModel: ObservableObject {
     let backupManager = BackupManager()
     private var currentManifest: BackupManifest?
     private var sizeResolutionTask: Task<Void, Never>?
+    private var lastBackupRequest: BackupRequest?
+
+    private struct BackupRequest {
+        let udid: String
+        let incremental: Bool
+        let preferNetwork: Bool
+    }
 
     func loadBackups() {
         sizeResolutionTask?.cancel()
         backupManager.discoverBackups()
         backups = backupManager.backups
         loadError = backupManager.lastError
+        reconcileSelectedBackupAfterReload()
         resolveBackupSizesInBackground(for: backups)
+    }
+
+    private func reconcileSelectedBackupAfterReload() {
+        guard let selectedBackup else { return }
+        guard backups.contains(where: { $0.id == selectedBackup.id && $0.path == selectedBackup.path }) else {
+            clearBrowserState()
+            return
+        }
     }
 
     private func resolveBackupSizesInBackground(for snapshot: [BackupInfo]) {
@@ -81,6 +98,7 @@ final class BackupViewModel: ObservableObject {
     }
 
     func createBackup(udid: String, incremental: Bool = false, preferNetwork: Bool = false) async {
+        lastBackupRequest = BackupRequest(udid: udid, incremental: incremental, preferNetwork: preferNetwork)
         isCreating = true
         progressText = "Preparing..."
 
@@ -96,29 +114,106 @@ final class BackupViewModel: ObservableObject {
         }
 
         isCreating = false
-        alertMessage = success ? "Backup completed" : (backupManager.lastError ?? "Backup failed")
-        showAlert = true
-        if success { loadBackups() }
+        if success {
+            alertMessage = "Backup completed"
+            showAlert = true
+            loadBackups()
+        } else if let failure = backupManager.lastBackupFailure {
+            backupIssue = failure
+        } else {
+            alertMessage = backupManager.lastError ?? "Backup failed"
+            showAlert = true
+        }
+    }
+
+    private func recoveryUdid(for issue: BackupManager.BackupFailure) -> String? {
+        issue.udid ?? lastBackupRequest?.udid
+    }
+
+    private func recoveryPrefersNetwork(for udid: String) -> Bool {
+        lastBackupRequest?.udid == udid ? (lastBackupRequest?.preferNetwork ?? false) : false
+    }
+
+    func runFullBackup(for issue: BackupManager.BackupFailure) async {
+        guard let udid = recoveryUdid(for: issue) else {
+            backupIssue = BackupManager.BackupFailure(
+                title: "Could Not Start Full Backup",
+                message: "Phosphor could not identify which device needs the full backup. Re-select the device and start a full backup manually.",
+                technicalDetails: issue.technicalDetails,
+                recoveryAction: nil
+            )
+            return
+        }
+        backupIssue = nil
+        await createBackup(udid: udid, incremental: false, preferNetwork: recoveryPrefersNetwork(for: udid))
+    }
+
+    func deleteIncompleteBackupAndRunFull(for issue: BackupManager.BackupFailure) async {
+        guard let udid = recoveryUdid(for: issue), let path = issue.recoveryPath else {
+            backupIssue = BackupManager.BackupFailure(
+                title: "Could Not Move Incomplete Backup",
+                message: "Phosphor could not identify the incomplete backup folder. Delete it manually or choose another backup folder, then run a full backup again.",
+                technicalDetails: issue.technicalDetails,
+                recoveryAction: .openBackupSettings
+            )
+            return
+        }
+        do {
+            try BackupManager.deleteIncompleteBackup(for: udid, expectedPath: path)
+            backupIssue = nil
+            loadBackups()
+            await createBackup(udid: udid, incremental: false, preferNetwork: recoveryPrefersNetwork(for: udid))
+        } catch {
+            backupIssue = BackupManager.BackupFailure(
+                title: "Could Not Move Incomplete Backup",
+                message: "Phosphor could not move the incomplete backup folder to Trash. Choose another backup folder or move it manually, then try a full backup again.",
+                technicalDetails: error.localizedDescription,
+                recoveryAction: .openBackupSettings,
+                udid: udid,
+                recoveryPath: path
+            )
+        }
+    }
+
+    func retryLastBackup() async {
+        guard let request = lastBackupRequest else { return }
+        backupIssue = nil
+        await createBackup(udid: request.udid, incremental: request.incremental, preferNetwork: request.preferNetwork)
     }
 
     // MARK: - Browsing
 
-    func openBackupBrowser(_ backup: BackupInfo) {
-        selectedBackup = backup
+    private func clearBrowserState() {
+        selectedBackup = nil
+        currentManifest = nil
+        browserDomains = []
+        browserFiles = []
+        currentDomain = nil
+        searchQuery = ""
+        searchResults = []
+    }
+
+    @discardableResult
+    func openBackupBrowser(_ backup: BackupInfo) -> Bool {
+        clearBrowserState()
         currentManifest = backupManager.openManifest(for: backup)
 
         guard let manifest = currentManifest else {
             // openManifest swallows the error into backupManager.lastError; surface it.
             alertMessage = backupManager.lastError ?? "Failed to open backup."
             showAlert = true
-            return
+            return false
         }
 
         do {
             browserDomains = try manifest.domains()
+            selectedBackup = backup
+            return true
         } catch {
+            clearBrowserState()
             alertMessage = "Failed to read backup: \(error.localizedDescription)"
             showAlert = true
+            return false
         }
     }
 

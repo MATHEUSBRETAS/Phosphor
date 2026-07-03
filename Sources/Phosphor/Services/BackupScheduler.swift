@@ -70,8 +70,10 @@ final class BackupScheduler: ObservableObject {
 
     func startMonitoring() {
         stopMonitoring()
-        guard schedule.enabled else { return }
-
+        // Keep a lightweight timer alive even when the saved schedule is disabled.
+        // Settings and schedule sheets use separate BackupScheduler instances that
+        // persist changes through UserDefaults; this app-level scheduler must be
+        // able to notice a schedule that is enabled after launch.
         timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.checkAndRun()
@@ -96,6 +98,7 @@ final class BackupScheduler: ObservableObject {
     func checkAndRun() async {
         reloadFromDefaults()
         guard schedule.enabled, !isRunningScheduledBackup else { return }
+        if schedule.nextRunDate == nil { updateNextRunDate() }
         guard let nextRun = schedule.nextRunDate, Date() >= nextRun else { return }
 
         isRunningScheduledBackup = true
@@ -112,9 +115,11 @@ final class BackupScheduler: ObservableObject {
 
     func runNow() async {
         guard !isRunningScheduledBackup else { return }
+        isRunningScheduledBackup = true
         let target = await findTargetDevice()
         guard let target else {
             addLog("No device available for backup", success: false)
+            isRunningScheduledBackup = false
             return
         }
         await runScheduledBackup(udid: target.udid, preferNetwork: target.preferNetwork)
@@ -130,11 +135,14 @@ final class BackupScheduler: ObservableObject {
         let manager = BackupManager()
         let success: Bool
 
-        if schedule.incrementalOnly {
+        if schedule.incrementalOnly && BackupManager.hasExistingBackup(for: udid) {
             success = await manager.createIncrementalBackup(udid: udid, preferNetwork: preferNetwork) { [weak self] text in
                 self?.scheduledBackupProgress = text
             }
         } else {
+            if schedule.incrementalOnly {
+                addLog("No complete backup exists yet; running required first full backup", success: true)
+            }
             success = await manager.createBackup(udid: udid, preferNetwork: preferNetwork) { [weak self] text in
                 self?.scheduledBackupProgress = text
             }

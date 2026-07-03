@@ -15,9 +15,9 @@ echo "==> Building Phosphor..."
 
 cd "$PROJECT_DIR"
 
-if [ -x "$PROJECT_DIR/Scripts/regression-tests.py" ]; then
+if [ -x "$PROJECT_DIR/Scripts/regression/run.py" ]; then
     echo "==> Running regression checks..."
-    "$PROJECT_DIR/Scripts/regression-tests.py"
+    "$PROJECT_DIR/Scripts/regression/run.py"
 fi
 
 # Build release binary

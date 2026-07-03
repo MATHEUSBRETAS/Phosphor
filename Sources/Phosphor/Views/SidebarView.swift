@@ -128,7 +128,7 @@ struct SidebarView: View {
                     }
                 } else {
                     ForEach(deviceVM.devices) { device in
-                        sidebarButton(.devices) {
+                        sidebarButton(.devices, onSelect: { deviceVM.selectDevice(device) }) {
                             Label {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
@@ -224,12 +224,14 @@ struct SidebarView: View {
     }
 
     /// Base button for sidebar items. Uses Button instead of List selection for reliability.
-    private func sidebarButton<Content: View>(_ section: SidebarSection, @ViewBuilder content: () -> Content) -> some View {
+    private func sidebarButton<Content: View>(
+        _ section: SidebarSection,
+        onSelect: (() -> Void)? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         Button {
             selection = section
-            if section == .devices, let first = deviceVM.devices.first {
-                deviceVM.selectDevice(first)
-            }
+            onSelect?()
         } label: {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -55,7 +55,7 @@ Open an issue with:
 2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Make your changes
 4. Test with a real device if possible
-5. Run `swift build` to verify compilation
+5. Run `Scripts/regression/run.py` and `swift build` to verify regressions and compilation
 6. Commit with clear messages
 7. Open a PR against `main`
 

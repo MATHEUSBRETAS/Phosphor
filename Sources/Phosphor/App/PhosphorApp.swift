@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 final class PhosphorAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -14,6 +14,10 @@ final class PhosphorAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { ensureWindowSoon() }
         return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 
     private func ensureWindowSoon() {
@@ -88,8 +92,17 @@ struct PhosphorApp: App {
 
             CommandMenu("Backup") {
                 Button("New Backup") {
-                    guard let udid = deviceVM.selectedDevice?.id else { return }
-                    Task { await backupVM.createBackup(udid: udid) }
+                    guard let device = deviceVM.selectedDevice else { return }
+                    if device.connectionType == .wifi && !BackupManager.hasExistingBackup(for: device.id) {
+                        guard confirmFirstFullWiFiBackup(for: device) else { return }
+                    }
+                    Task {
+                        await backupVM.createBackup(
+                            udid: device.id,
+                            incremental: false,
+                            preferNetwork: device.connectionType == .wifi
+                        )
+                    }
                 }
                 .keyboardShortcut("b", modifiers: .command)
                 .disabled(deviceVM.selectedDevice == nil)
@@ -111,5 +124,15 @@ struct PhosphorApp: App {
             get: { !hasCompletedOnboarding },
             set: { if !$0 { hasCompletedOnboarding = true } }
         )
+    }
+
+    private func confirmFirstFullWiFiBackup(for device: DeviceInfo) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Create First Full Wi-Fi Backup?"
+        alert.informativeText = "\(device.name) does not have complete backup metadata yet. The first backup must be full and can take a long time over Wi-Fi. USB is recommended. Continue with Wi-Fi?"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Create Full Wi-Fi Backup")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
