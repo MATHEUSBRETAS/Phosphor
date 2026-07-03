@@ -26,6 +26,24 @@ final class BackupManager: ObservableObject {
         let message: String
         let technicalDetails: String?
         let recoveryAction: RecoveryAction?
+        let udid: String?
+        let recoveryPath: String?
+
+        init(
+            title: String,
+            message: String,
+            technicalDetails: String?,
+            recoveryAction: RecoveryAction?,
+            udid: String? = nil,
+            recoveryPath: String? = nil
+        ) {
+            self.title = title
+            self.message = message
+            self.technicalDetails = technicalDetails
+            self.recoveryAction = recoveryAction
+            self.udid = udid
+            self.recoveryPath = recoveryPath
+        }
     }
 
     enum BackupMetadataHealth: Equatable {
@@ -139,7 +157,7 @@ final class BackupManager: ObservableObject {
             .joined(separator: "\n\n")
     }
 
-    private static func backupFailure(primary: String, stderr: String) -> BackupFailure {
+    private static func backupFailure(primary: String, stderr: String, udid: String? = nil, recoveryPath: String? = nil) -> BackupFailure {
         let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         let diagnostic = diagnostic(for: trimmed)
         var lines: [String] = [primary]
@@ -152,7 +170,9 @@ final class BackupManager: ObservableObject {
             title: "Backup Failed",
             message: lines.joined(separator: "\n\n"),
             technicalDetails: tail,
-            recoveryAction: diagnostic.action
+            recoveryAction: diagnostic.action,
+            udid: udid,
+            recoveryPath: recoveryPath
         )
     }
 
@@ -316,9 +336,43 @@ final class BackupManager: ObservableObject {
         backupMetadataHealth(for: udid, in: directory) == .complete
     }
 
-    static func deleteIncompleteBackup(for udid: String, in directory: String? = nil) throws {
+    static func incompleteBackupHasKnownMarkers(_ path: String) -> Bool {
+        let knownMarkers = ["Info.plist", "Status.plist", "Manifest.plist", "Manifest.db", "Manifest.mbdb"]
+        return knownMarkers.contains { marker in
+            FileManager.default.fileExists(atPath: (path as NSString).appendingPathComponent(marker))
+        }
+    }
+
+    static func deleteIncompleteBackup(for udid: String, expectedPath: String? = nil, in directory: String? = nil) throws {
         guard case .incomplete(let path) = backupMetadataHealth(for: udid, in: directory) else { return }
-        try FileManager.default.removeItem(atPath: path)
+        if let expectedPath, (expectedPath as NSString).standardizingPath != (path as NSString).standardizingPath {
+            throw NSError(domain: "Phosphor.Backup", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "The incomplete backup path changed. Refresh backups and try again."
+            ])
+        }
+
+        let expectedBackupPath = backupPath(for: udid, in: directory)
+        guard (path as NSString).standardizingPath == (expectedBackupPath as NSString).standardizingPath else {
+            throw NSError(domain: "Phosphor.Backup", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "Refusing to delete an unexpected backup path: \(path)"
+            ])
+        }
+
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
+            throw NSError(domain: "Phosphor.Backup", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Refusing to delete a non-directory backup path: \(path)"
+            ])
+        }
+
+        guard incompleteBackupHasKnownMarkers(path) else {
+            throw NSError(domain: "Phosphor.Backup", code: 4, userInfo: [
+                NSLocalizedDescriptionKey: "Refusing to delete \(path) because it does not contain recognizable iOS backup metadata. Delete it manually if you are sure it is safe."
+            ])
+        }
+
+        var trashedURL: NSURL?
+        try FileManager.default.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: &trashedURL)
     }
 
     // MARK: - Backup Creation
@@ -347,7 +401,9 @@ final class BackupManager: ObservableObject {
                 title: "Backup Folder Not Accessible",
                 message: preflight.reason ?? "Phosphor cannot read or write the selected backup folder.",
                 technicalDetails: Self.activeBackupDir,
-                recoveryAction: .openBackupSettings
+                recoveryAction: .openBackupSettings,
+                udid: udid,
+                recoveryPath: Self.activeBackupDir
             )
             onProgress(preflight.reason ?? "Backup directory is not accessible.")
             return false
@@ -360,7 +416,9 @@ final class BackupManager: ObservableObject {
                 title: "Incomplete Backup Found",
                 message: "A previous backup for this device did not finish, so iOS may reject another backup in this folder. Delete the incomplete folder, then run a full backup again.",
                 technicalDetails: path,
-                recoveryAction: .deleteIncompleteAndRunFull
+                recoveryAction: .deleteIncompleteAndRunFull,
+                udid: udid,
+                recoveryPath: path
             )
             lastError = lastBackupFailure?.message
             onProgress(lastError ?? "Incomplete backup found.")
@@ -424,7 +482,9 @@ final class BackupManager: ObservableObject {
                             self.backupProgress = "Backup failed"
                             let failure = Self.backupFailure(
                                 primary: "Both backup methods failed.",
-                                stderr: combinedStderr
+                                stderr: combinedStderr,
+                                udid: udid,
+                                recoveryPath: Self.backupPath(for: udid)
                             )
                             self.lastBackupFailure = failure
                             self.lastError = Self.composeFailureMessage(
@@ -531,7 +591,9 @@ final class BackupManager: ObservableObject {
                 title: "Backup Folder Not Accessible",
                 message: preflight.reason ?? "Phosphor cannot read or write the selected backup folder.",
                 technicalDetails: Self.activeBackupDir,
-                recoveryAction: .openBackupSettings
+                recoveryAction: .openBackupSettings,
+                udid: udid,
+                recoveryPath: Self.activeBackupDir
             )
             onProgress(preflight.reason ?? "Backup directory is not accessible.")
             return false
@@ -547,7 +609,9 @@ final class BackupManager: ObservableObject {
                 title: "Full Backup Required",
                 message: "No complete backup exists for this device yet. Run a full backup first; future Wi-Fi backups can be incremental.",
                 technicalDetails: Self.backupPath(for: udid),
-                recoveryAction: .runFullBackup
+                recoveryAction: .runFullBackup,
+                udid: udid,
+                recoveryPath: Self.backupPath(for: udid)
             )
             lastError = lastBackupFailure?.message
             onProgress(lastError ?? "Run a full backup first.")
@@ -559,7 +623,9 @@ final class BackupManager: ObservableObject {
                 title: "Incomplete Backup Found",
                 message: "A previous backup for this device did not finish. Delete the incomplete folder, then run a full backup again.",
                 technicalDetails: path,
-                recoveryAction: .deleteIncompleteAndRunFull
+                recoveryAction: .deleteIncompleteAndRunFull,
+                udid: udid,
+                recoveryPath: path
             )
             lastError = lastBackupFailure?.message
             onProgress(lastError ?? "Incomplete backup found.")
@@ -620,7 +686,9 @@ final class BackupManager: ObservableObject {
                             self.backupProgress = "Backup failed"
                             let failure = Self.backupFailure(
                                 primary: "Incremental backup failed via both backends.",
-                                stderr: combinedStderr
+                                stderr: combinedStderr,
+                                udid: udid,
+                                recoveryPath: Self.backupPath(for: udid)
                             )
                             self.lastBackupFailure = failure
                             self.lastError = Self.composeFailureMessage(

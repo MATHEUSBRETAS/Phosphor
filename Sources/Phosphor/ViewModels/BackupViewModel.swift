@@ -117,18 +117,51 @@ final class BackupViewModel: ObservableObject {
         }
     }
 
-    func deleteIncompleteBackupAndRunFull(udid: String, preferNetwork: Bool) async {
+    private func recoveryUdid(for issue: BackupManager.BackupFailure) -> String? {
+        issue.udid ?? lastBackupRequest?.udid
+    }
+
+    private func recoveryPrefersNetwork(for udid: String) -> Bool {
+        lastBackupRequest?.udid == udid ? (lastBackupRequest?.preferNetwork ?? false) : false
+    }
+
+    func runFullBackup(for issue: BackupManager.BackupFailure) async {
+        guard let udid = recoveryUdid(for: issue) else {
+            backupIssue = BackupManager.BackupFailure(
+                title: "Could Not Start Full Backup",
+                message: "Phosphor could not identify which device needs the full backup. Re-select the device and start a full backup manually.",
+                technicalDetails: issue.technicalDetails,
+                recoveryAction: nil
+            )
+            return
+        }
+        backupIssue = nil
+        await createBackup(udid: udid, incremental: false, preferNetwork: recoveryPrefersNetwork(for: udid))
+    }
+
+    func deleteIncompleteBackupAndRunFull(for issue: BackupManager.BackupFailure) async {
+        guard let udid = recoveryUdid(for: issue), let path = issue.recoveryPath else {
+            backupIssue = BackupManager.BackupFailure(
+                title: "Could Not Move Incomplete Backup",
+                message: "Phosphor could not identify the incomplete backup folder. Delete it manually or choose another backup folder, then run a full backup again.",
+                technicalDetails: issue.technicalDetails,
+                recoveryAction: .openBackupSettings
+            )
+            return
+        }
         do {
-            try BackupManager.deleteIncompleteBackup(for: udid)
+            try BackupManager.deleteIncompleteBackup(for: udid, expectedPath: path)
             backupIssue = nil
             loadBackups()
-            await createBackup(udid: udid, incremental: false, preferNetwork: preferNetwork)
+            await createBackup(udid: udid, incremental: false, preferNetwork: recoveryPrefersNetwork(for: udid))
         } catch {
             backupIssue = BackupManager.BackupFailure(
-                title: "Could Not Delete Incomplete Backup",
-                message: "Phosphor could not remove the incomplete backup folder. Choose another backup folder or delete it manually, then try a full backup again.",
+                title: "Could Not Move Incomplete Backup",
+                message: "Phosphor could not move the incomplete backup folder to Trash. Choose another backup folder or move it manually, then try a full backup again.",
                 technicalDetails: error.localizedDescription,
-                recoveryAction: .openBackupSettings
+                recoveryAction: .openBackupSettings,
+                udid: udid,
+                recoveryPath: path
             )
         }
     }

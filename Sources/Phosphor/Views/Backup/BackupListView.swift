@@ -15,6 +15,8 @@ struct BackupListView: View {
     @State private var showFullWiFiBackupConfirm = false
     @State private var pendingFullWiFiBackupUDID: String?
     @State private var pendingFullWiFiBackupPrefersNetwork = false
+    @State private var showIncompleteBackupTrashConfirm = false
+    @State private var pendingIncompleteBackupIssue: BackupManager.BackupFailure?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -101,9 +103,22 @@ struct BackupListView: View {
             BackupIssueSheet(
                 issue: issue,
                 primaryActionTitle: backupIssueActionTitle(for: issue),
-                primaryAction: { handleBackupIssueAction(issue.recoveryAction) },
+                primaryAction: { handleBackupIssueAction(issue) },
                 dismiss: { backupVM.backupIssue = nil }
             )
+        }
+        .alert("Move Incomplete Backup to Trash?", isPresented: $showIncompleteBackupTrashConfirm) {
+            Button("Move to Trash & Run Full Backup", role: .destructive) {
+                if let issue = pendingIncompleteBackupIssue {
+                    Task { await backupVM.deleteIncompleteBackupAndRunFull(for: issue) }
+                }
+                pendingIncompleteBackupIssue = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingIncompleteBackupIssue = nil
+            }
+        } message: {
+            Text(incompleteBackupTrashConfirmationMessage)
         }
         .alert("Full Wi-Fi Backup?", isPresented: $showFullWiFiBackupConfirm) {
             Button("Run Full Wi-Fi Backup") {
@@ -261,6 +276,13 @@ struct BackupListView: View {
         return "This is the first backup for this device, so it must be a full backup. USB is recommended for the first backup; Wi-Fi is supported but slower and more sensitive to sleep, lock, and network interruptions."
     }
 
+    private var incompleteBackupTrashConfirmationMessage: String {
+        guard let issue = pendingIncompleteBackupIssue else { return "This will move the incomplete backup folder to Trash." }
+        let path = issue.recoveryPath ?? issue.technicalDetails ?? "Unknown path"
+        let device = issue.udid.map { " for device \($0)" } ?? ""
+        return "This will move this incomplete backup folder\(device) to Trash, then run a full backup:\n\n\(path)\n\nPhosphor will not permanently delete the folder. You can restore it from Trash if needed."
+    }
+
     private func shouldOfferIncremental(for device: DeviceInfo) -> Bool {
         BackupManager.hasExistingBackup(for: device.id) && backupVM.backups.contains { backup in
             backup.udid == device.id || backup.id == device.id
@@ -283,15 +305,14 @@ struct BackupListView: View {
         }
     }
 
-    private func handleBackupIssueAction(_ action: BackupManager.RecoveryAction?) {
-        switch action {
+    private func handleBackupIssueAction(_ issue: BackupManager.BackupFailure) {
+        switch issue.recoveryAction {
         case .runFullBackup:
-            guard let device = deviceVM.selectedDevice else { return }
             backupVM.backupIssue = nil
-            Task { await backupVM.createBackup(udid: device.id, incremental: false, preferNetwork: device.connectionType == .wifi) }
+            Task { await backupVM.runFullBackup(for: issue) }
         case .deleteIncompleteAndRunFull:
-            guard let device = deviceVM.selectedDevice else { return }
-            Task { await backupVM.deleteIncompleteBackupAndRunFull(udid: device.id, preferNetwork: device.connectionType == .wifi) }
+            pendingIncompleteBackupIssue = issue
+            showIncompleteBackupTrashConfirm = true
         case .openBackupSettings:
             backupVM.backupIssue = nil
             NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
@@ -641,7 +662,7 @@ struct BackupScheduleSheet: View {
                         }
 
                         Toggle("Wi-Fi only (skip if Wi-Fi is not available)", isOn: $scheduler.schedule.wifiOnly)
-                        Toggle("Incremental only (faster)", isOn: $scheduler.schedule.incrementalOnly)
+                        Toggle("Incremental when possible (faster)", isOn: $scheduler.schedule.incrementalOnly)
                         if scheduler.schedule.incrementalOnly {
                             Text("The first scheduled run will create the required full backup if this device does not already have complete backup metadata.")
                                 .font(.caption)

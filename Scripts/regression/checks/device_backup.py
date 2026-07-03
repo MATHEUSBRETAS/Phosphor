@@ -88,6 +88,7 @@ def test_wifi_schedules_use_network_discovery_and_network_backup_flag(root: Path
 
     view = read(root, "Sources/Phosphor/Views/Backup/BackupListView.swift")
     assert_contains(view, "Wi-Fi only (skip if Wi-Fi is not available)", "Wi-Fi-only schedule copy should not say USB is required")
+    assert_contains(view, "Incremental when possible (faster)", "Schedule copy should not promise incremental-only behavior when first run may be full")
     assert_contains(view, "first scheduled run will create the required full backup", "Schedule UI should explain first-run behavior for incremental mode")
 
 
@@ -101,6 +102,10 @@ def test_incremental_backups_require_existing_metadata(root: Path) -> None:
     assert_contains(manager, "Backup needs a full backup first", "Incremental backup should fail before backend calls when metadata is missing")
     assert_contains(manager, "Run a full backup first; future Wi-Fi backups can be incremental", "Missing metadata error should be actionable")
     assert_contains(manager, "deleteIncompleteBackup(for udid", "Recovery flow should be able to remove interrupted partial backup folders")
+    assert_contains(manager, "expectedPath", "Incomplete-backup recovery should validate the exact failed path before moving anything")
+    assert_contains(manager, "incompleteBackupHasKnownMarkers", "Incomplete-backup recovery should require recognizable iOS backup markers before moving a folder")
+    assert_contains(manager, "trashItem", "Incomplete-backup recovery should move folders to Trash instead of permanently deleting them")
+    assert_not_contains(manager, "removeItem(atPath: path)", "Incomplete-backup recovery should not permanently delete backup folders")
 
     view = read(root, "Sources/Phosphor/Views/Backup/BackupListView.swift")
     assert_contains(view, "shouldOfferIncremental(for: device)", "Backup UI should only offer incremental when a backup exists for the selected device")
@@ -122,12 +127,17 @@ def test_backup_failures_have_recovery_actions_and_collapsed_details(root: Path)
     assert_contains(vm, "backupIssue", "BackupViewModel should surface structured backup issues separately from success alerts")
     assert_contains(vm, "retryLastBackup", "BackupViewModel should support recommended retry action")
     assert_contains(vm, "deleteIncompleteBackupAndRunFull", "BackupViewModel should implement incomplete-backup recovery")
+    assert_contains(vm, "runFullBackup(for issue", "Recovery actions should use the failed issue context, not the currently selected device")
+    assert_contains(vm, "expectedPath: path", "Recovery deletion should use the exact path from the failed issue")
     assert_contains(vm, "private func clearBrowserState()", "BackupViewModel should clear stale browser state before opening another backup")
     assert_contains(vm, "selectedBackup = nil", "Failed backup browser opens should not leave stale selected backup state visible")
     assert_contains(vm, "browserDomains = []", "Failed backup browser opens should not leave stale domains visible")
 
     view = read(root, "Sources/Phosphor/Views/Backup/BackupListView.swift")
     assert_contains(view, "BackupIssueSheet", "Backup failures should use a sheet instead of dumping raw tracebacks in an alert")
+    assert_contains(view, "handleBackupIssueAction(_ issue", "Backup recovery actions should receive the full failed issue context")
+    assert_contains(view, "Move Incomplete Backup to Trash?", "Destructive incomplete-backup recovery should require explicit confirmation")
+    assert_contains(view, "incompleteBackupTrashConfirmationMessage", "Incomplete-backup confirmation should show the exact path before moving it")
     assert_contains(view, "DisclosureGroup(\"Technical details\"", "Technical details should be collapsed by default")
     assert_contains(view, "Delete Incomplete Backup & Run Full", "Incomplete backup failures should offer a recovery action")
     assert_contains(view, "Open Backup Settings", "Permission/folder failures should offer a settings action")
