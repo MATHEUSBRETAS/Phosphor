@@ -10,6 +10,8 @@ struct FileBrowserView: View {
     @State private var showCopyToDevice = false
     @State private var isDragOver = false
     @State private var dragDropStatus: String?
+    @State private var pendingDeleteFile: FileTransferManager.FileEntry?
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,6 +28,24 @@ struct FileBrowserView: View {
             Button("OK") { fileManager.lastError = nil }
         } message: {
             Text(fileManager.lastError ?? "")
+        }
+        .alert("Delete File?", isPresented: $showDeleteConfirm) {
+            Button("Cancel", role: .cancel) { pendingDeleteFile = nil }
+            Button("Delete", role: .destructive) {
+                guard let entry = pendingDeleteFile else { return }
+                pendingDeleteFile = nil
+                Task {
+                    do {
+                        try await fileManager.deleteFile(entry)
+                    } catch {
+                        fileManager.lastError = "Could not delete \(entry.name): \(error.localizedDescription)"
+                    }
+                }
+            }
+        } message: {
+            if let entry = pendingDeleteFile {
+                Text("This will delete \(entry.name) from the connected device. This cannot be undone.")
+            }
         }
     }
 
@@ -141,9 +161,12 @@ struct FileBrowserView: View {
                                         Task { await fileManager.navigateInto(entry) }
                                     }
                                 }
-                                Divider()
-                                Button("Delete", role: .destructive) {
-                                    Task { try? await fileManager.deleteFile(entry) }
+                                if !entry.isDirectory {
+                                    Divider()
+                                    Button("Delete", role: .destructive) {
+                                        pendingDeleteFile = entry
+                                        showDeleteConfirm = true
+                                    }
                                 }
                             }
                     }

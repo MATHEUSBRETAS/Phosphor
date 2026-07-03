@@ -25,6 +25,24 @@ def test_streaming_exports_truncate_before_write(root: Path) -> None:
         assert_contains(body, "FileHandle(forWritingTo: outputURL)", f"{func_name} must stream through FileHandle")
 
 
+
+
+
+def test_bulk_message_exports_use_collision_safe_filenames(root: Path) -> None:
+    src = read(root, "Sources/Phosphor/Services/MessageExporter.swift")
+    assert_contains(src, "private func exportFilename(for chat", "Bulk message export should centralize filename generation")
+    assert_contains(src, "-chat-\\(chat.id)", "Bulk message export filenames should include chat id to avoid duplicate-title overwrites")
+    export_all = re.search(r"func exportAllChats\(.*?\) throws -> Int \{(?P<body>.*?)\n    \}", src, re.S)
+    assert export_all is not None, "exportAllChats should exist"
+    assert_contains(export_all.group("body"), "exportFilename(for: chat", "exportAllChats should use collision-safe filenames")
+
+
+def test_html_export_cleans_stale_attachment_folder(root: Path) -> None:
+    src = read(root, "Sources/Phosphor/Services/MessageExporter.swift")
+    assert_contains(src, "private func removeAttachmentFolder(forHTMLPath", "HTML export should have explicit stale attachment cleanup")
+    html = re.search(r"private func exportHTML\(.*?\) throws \{(?P<body>.*?)\n    \}", src, re.S)
+    assert html is not None, "exportHTML should exist"
+    assert_contains(html.group("body"), "removeAttachmentFolder(forHTMLPath: path)", "HTML export should remove stale attachment folders before staging/writing")
 def test_json_overwrite_fixture_has_no_stale_tail(root: Path) -> None:
     del root  # fixture mirrors the Swift export invariant without touching source files.
     with tempfile.TemporaryDirectory() as tmp:

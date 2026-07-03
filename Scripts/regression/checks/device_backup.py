@@ -155,6 +155,8 @@ def test_backup_failures_have_recovery_actions_and_collapsed_details(root: Path)
 
     app = read(root, "Sources/Phosphor/App/PhosphorApp.swift")
     assert_contains(app, "preferNetwork: device.connectionType == .wifi", "Backup menu command should preserve Wi-Fi network preference")
+    assert_contains(app, "confirmFirstFullWiFiBackup", "Backup menu command should use the same first full Wi-Fi safety confirmation")
+    assert_contains(app, "device.connectionType == .wifi && !BackupManager.hasExistingBackup", "Wi-Fi menu backups without metadata should be confirmed before starting")
 
 
 def test_idevicebackup2_network_argument_order_is_before_backup_subcommand(root: Path) -> None:
@@ -177,3 +179,52 @@ def test_phosphor_archive_import_uses_active_dir_and_rejects_unsafe_archives(roo
     assert_contains(archiver, "looksLikeBackupFolder(itemPath)", "Archive import should only report complete backup folders as imported")
     assert_contains(archiver, "moveImportedEntriesToTrash", "Failed archive imports should clean up newly extracted entries")
     assert_contains(archiver, "archive did not contain a complete iOS backup", "Invalid safe archives should fail with a clear reason")
+
+
+def test_sidebar_device_rows_select_the_clicked_device(root: Path) -> None:
+    sidebar = read(root, "Sources/Phosphor/Views/SidebarView.swift")
+    assert_contains(sidebar, "sidebarButton(.devices, onSelect: { deviceVM.selectDevice(device) })", "Each sidebar device row should select its own device, not the first device")
+    assert_not_contains(sidebar, "selectDevice(first)", "Generic device sidebar action must not always select the first device")
+
+
+def test_backup_selection_and_browser_navigation_stay_in_sync(root: Path) -> None:
+    vm = read(root, "Sources/Phosphor/ViewModels/BackupViewModel.swift")
+    assert_contains(vm, "reconcileSelectedBackupAfterReload", "Reloading backups should reconcile stale selected backup state")
+    assert_contains(vm, "backups.contains(where: { $0.id == selectedBackup.id && $0.path == selectedBackup.path })", "Selected backup should remain valid only if the same backup path is still present")
+    assert_contains(vm, "@discardableResult\n    func openBackupBrowser(_ backup: BackupInfo) -> Bool", "Opening a backup should report success so views can navigate only after manifest load")
+
+    content = read(root, "Sources/Phosphor/Views/ContentView.swift")
+    assert_contains(content, "BackupListView(onBrowseBackup: { selectedSection = .backupBrowser })", "Backup list Browse should navigate to Backup Browser after a successful open")
+    assert_contains(content, "BackupTimeMachineView(onBrowseBackup: { selectedSection = .backupBrowser })", "Time Machine Browse should navigate to Backup Browser after a successful open")
+
+    browser = read(root, "Sources/Phosphor/Views/Backup/BackupBrowserView.swift")
+    assert_contains(browser, ".onChange(of: backupVM.selectedBackup?.id)", "Backup browser should clear local selections when the selected backup changes")
+    assert_contains(browser, "selectedFiles.removeAll()", "Backup browser should drop selected file state when backup/domain changes")
+
+
+def test_file_browser_delete_requires_confirmation_and_blocks_directories(root: Path) -> None:
+    view = read(root, "Sources/Phosphor/Views/Files/FileBrowserView.swift")
+    assert_contains(view, "pendingDeleteFile", "File browser delete should stage a pending file before confirmation")
+    assert_contains(view, ".alert(\"Delete File?\"", "File browser delete should require a confirmation alert")
+    assert_contains(view, "if !entry.isDirectory", "File browser should not expose directory deletion in the context menu")
+    assert_not_contains(view, "Task { try? await fileManager.deleteFile(entry) }", "File browser context menu must not delete immediately")
+
+    manager = read(root, "Sources/Phosphor/Services/FileTransferManager.swift")
+    assert_contains(manager, "guard !entry.isDirectory", "FileTransferManager should reject directory deletion at the service layer")
+    assert_contains(manager, "Directory deletion is not supported", "Directory deletion rejection should be explicit")
+
+
+def test_backup_extract_preserves_domain_relative_paths(root: Path) -> None:
+    manager = read(root, "Sources/Phosphor/Services/BackupManager.swift")
+    assert_contains(manager, "private func extractionDestination(for entry", "Backup extraction should centralize safe destination path construction")
+    assert_contains(manager, "appendingPathComponent(safeDomain)", "Backup extraction should group files by domain to avoid basename collisions")
+    assert_contains(manager, "entry.relativePath", "Backup extraction should preserve manifest relative paths instead of flattening to fileName")
+    assert_not_contains(manager, "appendingPathComponent(entry.fileName)\n            do {", "Backup extraction should not flatten every selected file to destination/fileName")
+
+
+def test_live_photo_exports_use_path_based_names(root: Path) -> None:
+    live = read(root, "Sources/Phosphor/Services/LiveDeviceBrowser.swift")
+    assert_contains(live, "private func uniqueLocalName(for photo", "Live photo export should centralize duplicate-safe local naming")
+    assert_contains(live, "photo.path", "Live photo export naming should use the full device path, not only the basename")
+    assert_contains(live, "replacingOccurrences(of: \"/\", with: \"_\")", "Live photo export should preserve DCIM folder identity in local filenames")
+    assert_contains(live, "appendingPathComponent(uniqueLocalName(for: photo))", "Live photo temp cache and export should use duplicate-safe names")

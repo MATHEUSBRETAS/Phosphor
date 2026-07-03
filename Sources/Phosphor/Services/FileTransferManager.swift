@@ -345,6 +345,13 @@ final class FileTransferManager: ObservableObject {
 
     /// Delete a file on the device.
     func deleteFile(_ entry: FileEntry) async throws {
+        guard !entry.isDirectory else {
+            throw NSError(
+                domain: "Phosphor",
+                code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "Directory deletion is not supported from the file browser."]
+            )
+        }
         if usesAFC {
             let success = await PyMobileDevice.afcRemove(path: entry.path, udid: deviceUDID)
             if !success { throw CocoaError(.fileWriteUnknown) }

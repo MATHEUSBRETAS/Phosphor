@@ -6,6 +6,7 @@ struct BackupListView: View {
 
     @EnvironmentObject var deviceVM: DeviceViewModel
     @EnvironmentObject var backupVM: BackupViewModel
+    var onBrowseBackup: () -> Void = {}
     @State private var showDeleteConfirm = false
     @State private var backupToDelete: BackupInfo?
     @State private var showImportArchive = false
@@ -72,7 +73,9 @@ struct BackupListView: View {
                 List {
                     ForEach(backupVM.backups) { backup in
                         BackupRow(backup: backup) {
-                            backupVM.openBackupBrowser(backup)
+                            if backupVM.openBackupBrowser(backup) {
+                                onBrowseBackup()
+                            }
                         } onDelete: {
                             backupToDelete = backup
                             showDeleteConfirm = true

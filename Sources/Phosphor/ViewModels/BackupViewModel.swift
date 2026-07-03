@@ -37,7 +37,16 @@ final class BackupViewModel: ObservableObject {
         backupManager.discoverBackups()
         backups = backupManager.backups
         loadError = backupManager.lastError
+        reconcileSelectedBackupAfterReload()
         resolveBackupSizesInBackground(for: backups)
+    }
+
+    private func reconcileSelectedBackupAfterReload() {
+        guard let selectedBackup else { return }
+        guard backups.contains(where: { $0.id == selectedBackup.id && $0.path == selectedBackup.path }) else {
+            clearBrowserState()
+            return
+        }
     }
 
     private func resolveBackupSizesInBackground(for snapshot: [BackupInfo]) {
@@ -184,7 +193,8 @@ final class BackupViewModel: ObservableObject {
         searchResults = []
     }
 
-    func openBackupBrowser(_ backup: BackupInfo) {
+    @discardableResult
+    func openBackupBrowser(_ backup: BackupInfo) -> Bool {
         clearBrowserState()
         currentManifest = backupManager.openManifest(for: backup)
 
@@ -192,16 +202,18 @@ final class BackupViewModel: ObservableObject {
             // openManifest swallows the error into backupManager.lastError; surface it.
             alertMessage = backupManager.lastError ?? "Failed to open backup."
             showAlert = true
-            return
+            return false
         }
 
         do {
             browserDomains = try manifest.domains()
             selectedBackup = backup
+            return true
         } catch {
             clearBrowserState()
             alertMessage = "Failed to read backup: \(error.localizedDescription)"
             showAlert = true
+            return false
         }
     }
 

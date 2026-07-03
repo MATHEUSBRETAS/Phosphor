@@ -157,7 +157,7 @@ final class LiveDeviceBrowser: ObservableObject {
         let fm = FileManager.default
         try? fm.createDirectory(atPath: tmpDir, withIntermediateDirectories: true)
 
-        let localPath = (tmpDir as NSString).appendingPathComponent(photo.name)
+        let localPath = (tmpDir as NSString).appendingPathComponent(uniqueLocalName(for: photo))
         if fm.fileExists(atPath: localPath) { return localPath } // Already downloaded
 
         let success = await PyMobileDevice.afcPull(remotePath: photo.path, localPath: localPath, udid: udid)
@@ -211,6 +211,13 @@ final class LiveDeviceBrowser: ObservableObject {
 
     // MARK: - Export
 
+    private func uniqueLocalName(for photo: LivePhoto) -> String {
+        let stem = photo.path
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .replacingOccurrences(of: "/", with: "_")
+        return stem.isEmpty ? photo.name : stem
+    }
+
     func exportPhoto(_ photo: LivePhoto, to destination: String) async throws {
         let fm = FileManager.default
         let destDir = (destination as NSString).deletingLastPathComponent
@@ -233,7 +240,7 @@ final class LiveDeviceBrowser: ObservableObject {
         try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
         var count = 0
         for photo in selectedPhotos {
-            let dest = (directory as NSString).appendingPathComponent(photo.name)
+            let dest = (directory as NSString).appendingPathComponent(uniqueLocalName(for: photo))
             do { try await exportPhoto(photo, to: dest); count += 1 } catch { continue }
         }
         return count

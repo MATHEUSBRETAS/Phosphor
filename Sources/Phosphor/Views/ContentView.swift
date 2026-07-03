@@ -104,11 +104,11 @@ struct ContentView: View {
         case .devices:
             DeviceOverviewView()
         case .backups:
-            BackupListView()
+            BackupListView(onBrowseBackup: { selectedSection = .backupBrowser })
         case .backupBrowser:
             BackupBrowserView()
         case .timeMachine:
-            BackupTimeMachineView()
+            BackupTimeMachineView(onBrowseBackup: { selectedSection = .backupBrowser })
         case .messages:
             MessageListView()
         case .whatsapp:

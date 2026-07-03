@@ -72,6 +72,13 @@ struct BackupBrowserView: View {
         .onChange(of: searchText) { _, newValue in
             backupVM.searchBackup(newValue)
         }
+        .onChange(of: backupVM.selectedBackup?.id) { _, _ in
+            selectedFiles.removeAll()
+            searchText = ""
+        }
+        .onChange(of: backupVM.currentDomain) { _, _ in
+            selectedFiles.removeAll()
+        }
         .onChange(of: showExportSheet) { _, show in
             guard show else { return }
             showExportSheet = false

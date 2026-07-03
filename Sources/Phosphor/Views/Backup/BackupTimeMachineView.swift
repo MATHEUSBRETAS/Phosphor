@@ -7,6 +7,7 @@ struct BackupTimeMachineView: View {
 
     @EnvironmentObject var backupVM: BackupViewModel
     @EnvironmentObject var deviceVM: DeviceViewModel
+    var onBrowseBackup: () -> Void = {}
     @State private var selectedIndex: Int = 0
     @State private var isAnimating = false
     @State private var showRestoreConfirm = false
@@ -171,7 +172,9 @@ struct BackupTimeMachineView: View {
                         .controlSize(.small)
 
                         Button("Browse") {
-                            backupVM.openBackupBrowser(backup)
+                            if backupVM.openBackupBrowser(backup) {
+                                onBrowseBackup()
+                            }
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)

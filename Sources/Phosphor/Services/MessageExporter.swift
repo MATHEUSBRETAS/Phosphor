@@ -489,12 +489,8 @@ final class MessageExporter {
         var count = 0
         for chat in chats {
             try onProgress?(count, chats.count, chat.title)
-            let safeName = chat.title
-                .replacingOccurrences(of: "/", with: "-")
-                .replacingOccurrences(of: ":", with: "-")
-                .prefix(50)
-            let filename = "\(safeName).\(format.fileExtension)"
-            let path = (directory as NSString).appendingPathComponent(String(filename))
+            let filename = exportFilename(for: chat, format: format)
+            let path = (directory as NSString).appendingPathComponent(filename)
             try exportChat(chatId: chat.id, format: format, to: path, options: options)
             count += 1
         }
@@ -518,6 +514,14 @@ final class MessageExporter {
     }
 
     // MARK: - Private Export Implementations
+
+    private func exportFilename(for chat: MessageChat, format: MessageExportFormat) -> String {
+        let safeName = chat.title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .prefix(50)
+        return "\(safeName)-chat-\(chat.id).\(format.fileExtension)"
+    }
 
     private func exportCSV(messages: [Message], chatTitle: String, to path: String) throws {
         let outputURL = URL(fileURLWithPath: path)
@@ -621,7 +625,14 @@ final class MessageExporter {
         return map
     }
 
+    private func removeAttachmentFolder(forHTMLPath htmlPath: String) {
+        let baseName = (htmlPath as NSString).deletingPathExtension
+        let dir = "\(baseName)_attachments"
+        try? FileManager.default.removeItem(atPath: dir)
+    }
+
     private func exportHTML(messages: [Message], chatTitle: String, to path: String, includeAttachments: Bool = true) throws {
+        removeAttachmentFolder(forHTMLPath: path)
         let attachmentMap = includeAttachments ? stageAttachments(messages: messages, htmlPath: path) : [:]
         let outputURL = URL(fileURLWithPath: path)
         try? FileManager.default.removeItem(at: outputURL)

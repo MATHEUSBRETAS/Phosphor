@@ -761,6 +761,26 @@ final class BackupManager: ObservableObject {
 
     // MARK: - Selective Extract
 
+    private func extractionDestination(for entry: BackupManifest.FileEntry, under destination: String) -> String {
+        let safeDomain = entry.domain
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
+        let relativeComponents = entry.relativePath
+            .split(separator: "/")
+            .map(String.init)
+            .filter { !$0.isEmpty && $0 != "." && $0 != ".." }
+
+        var path = (destination as NSString).appendingPathComponent(safeDomain)
+        for component in relativeComponents {
+            path = (path as NSString).appendingPathComponent(component)
+        }
+
+        if relativeComponents.isEmpty || entry.relativePath.hasSuffix("/") {
+            path = (path as NSString).appendingPathComponent(entry.fileName)
+        }
+        return path
+    }
+
     func extractFiles(
         from backup: BackupInfo,
         entries: [BackupManifest.FileEntry],
@@ -770,7 +790,7 @@ final class BackupManager: ObservableObject {
         var extracted = 0
 
         for entry in entries where entry.isFile {
-            let destPath = (destination as NSString).appendingPathComponent(entry.fileName)
+            let destPath = extractionDestination(for: entry, under: destination)
             do {
                 try manifest.extractFile(entry, to: destPath)
                 extracted += 1
