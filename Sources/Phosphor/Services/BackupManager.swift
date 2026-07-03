@@ -262,6 +262,15 @@ final class BackupManager: ObservableObject {
                (fm.fileExists(atPath: manifestPlist) || fm.fileExists(atPath: manifestDb))
     }
 
+    /// Incremental backups require an existing valid backup metadata folder for
+    /// the target UDID. If the folder is missing or partially-created, both
+    /// backup backends fail with low-level MBErrorDomain/205 plist errors.
+    static func hasExistingBackup(for udid: String, in directory: String? = nil) -> Bool {
+        let rootDirectory = directory ?? activeBackupDir
+        let deviceDirectory = (rootDirectory as NSString).appendingPathComponent(udid)
+        return looksLikeBackupFolder(deviceDirectory)
+    }
+
     // MARK: - Backup Creation
 
     /// Create a new backup. pymobiledevice3 primary, idevicebackup2 fallback.
@@ -442,6 +451,14 @@ final class BackupManager: ObservableObject {
             backupProgress = "Backup failed"
             lastError = preflight.reason
             onProgress(preflight.reason ?? "Backup directory is not accessible.")
+            return false
+        }
+
+        guard Self.hasExistingBackup(for: udid) else {
+            isCreatingBackup = false
+            backupProgress = "Backup needs a full backup first"
+            lastError = "No complete backup metadata exists for this device yet. Run a full backup first; future Wi-Fi backups can be incremental."
+            onProgress(lastError ?? "Run a full backup first.")
             return false
         }
 

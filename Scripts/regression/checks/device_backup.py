@@ -84,6 +84,19 @@ def test_wifi_schedules_use_network_discovery_and_network_backup_flag(root: Path
     assert_contains(scheduler, "createBackup(udid: udid, preferNetwork: preferNetwork)", "scheduled full backups should preserve network preference")
 
 
+def test_incremental_backups_require_existing_metadata(root: Path) -> None:
+    manager = read(root, "Sources/Phosphor/Services/BackupManager.swift")
+    assert_contains(manager, "hasExistingBackup(for udid", "BackupManager should expose an existing-backup metadata preflight")
+    assert_contains(manager, "looksLikeBackupFolder(deviceDirectory)", "Existing-backup preflight should require Info.plist and Manifest metadata")
+    assert_contains(manager, "Backup needs a full backup first", "Incremental backup should fail before backend calls when metadata is missing")
+    assert_contains(manager, "Run a full backup first; future Wi-Fi backups can be incremental", "Missing metadata error should be actionable")
+
+    view = read(root, "Sources/Phosphor/Views/Backup/BackupListView.swift")
+    assert_contains(view, "shouldOfferIncremental(for: device)", "Backup UI should only offer incremental when a backup exists for the selected device")
+    assert_contains(view, "First Wi-Fi Backup (Full)", "First Wi-Fi backup action should be full, not incremental")
+    assert_contains(view, "Create Full Wi-Fi Backup", "Empty Wi-Fi backup state should default to a full backup")
+
+
 def test_idevicebackup2_network_argument_order_is_before_backup_subcommand(root: Path) -> None:
     manager = read(root, "Sources/Phosphor/Services/BackupManager.swift")
     match = re.search(r"private func idevicebackupArguments\(.*?\) -> \[String\] \{(?P<body>.*?)\n    \}", manager, re.S)

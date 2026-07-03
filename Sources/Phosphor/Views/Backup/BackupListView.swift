@@ -59,9 +59,9 @@ struct BackupListView: View {
                     subtitle: "Back up your device, or pick an existing backup folder via New Backup -> Open Existing Backup Folder.",
                     action: {
                         guard let device = deviceVM.selectedDevice else { return }
-                        startBackup(for: device, incremental: device.connectionType == .wifi)
+                        startBackup(for: device, incremental: shouldOfferIncremental(for: device))
                     },
-                    actionLabel: deviceVM.selectedDevice?.connectionType == .wifi ? "Create Incremental Wi-Fi Backup" : (deviceVM.selectedDevice != nil ? "Create Backup" : nil)
+                    actionLabel: emptyStateBackupActionLabel
                 )
             } else {
                 List {
@@ -150,21 +150,31 @@ struct BackupListView: View {
     @ViewBuilder
     private var backupCreationButtons: some View {
         if deviceVM.selectedDevice?.connectionType == .wifi {
-            Button {
-                guard let device = deviceVM.selectedDevice else { return }
-                startBackup(for: device, incremental: true)
-            } label: {
-                Label("Incremental Wi-Fi Backup (Recommended)", systemImage: "wifi")
+            if let device = deviceVM.selectedDevice, shouldOfferIncremental(for: device) {
+                Button {
+                    startBackup(for: device, incremental: true)
+                } label: {
+                    Label("Incremental Wi-Fi Backup (Recommended)", systemImage: "wifi")
+                }
+                .disabled(deviceVM.selectedDevice == nil)
+            } else {
+                Button {
+                    guard let device = deviceVM.selectedDevice else { return }
+                    startBackup(for: device, incremental: false)
+                } label: {
+                    Label("First Wi-Fi Backup (Full)", systemImage: "externaldrive.badge.plus")
+                }
+                .disabled(deviceVM.selectedDevice == nil)
             }
-            .disabled(deviceVM.selectedDevice == nil)
 
-            Button {
-                guard let device = deviceVM.selectedDevice else { return }
-                startBackup(for: device, incremental: false)
-            } label: {
-                Label("Full Wi-Fi Backup (Slower)", systemImage: "externaldrive.badge.plus")
+            if let device = deviceVM.selectedDevice, shouldOfferIncremental(for: device) {
+                Button {
+                    startBackup(for: device, incremental: false)
+                } label: {
+                    Label("Full Wi-Fi Backup (Slower)", systemImage: "externaldrive.badge.plus")
+                }
+                .disabled(deviceVM.selectedDevice == nil)
             }
-            .disabled(deviceVM.selectedDevice == nil)
         } else {
             Button {
                 guard let device = deviceVM.selectedDevice else { return }
@@ -181,6 +191,20 @@ struct BackupListView: View {
                 Label("Incremental Backup", systemImage: "arrow.triangle.2.circlepath")
             }
             .disabled(deviceVM.selectedDevice == nil)
+        }
+    }
+
+    private var emptyStateBackupActionLabel: String? {
+        guard let device = deviceVM.selectedDevice else { return nil }
+        if device.connectionType == .wifi {
+            return shouldOfferIncremental(for: device) ? "Create Incremental Wi-Fi Backup" : "Create Full Wi-Fi Backup"
+        }
+        return "Create Backup"
+    }
+
+    private func shouldOfferIncremental(for device: DeviceInfo) -> Bool {
+        backupVM.backups.contains { backup in
+            backup.udid == device.id || backup.id == device.id
         }
     }
 
