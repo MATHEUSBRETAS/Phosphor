@@ -87,6 +87,11 @@ def test_wifi_schedules_use_network_discovery_and_network_backup_flag(root: Path
     assert_contains(scheduler, "running required first full backup", "Scheduled first-full fallback should be logged clearly")
     assert_contains(scheduler, "able to notice a schedule that is enabled after launch", "App-level scheduler should keep monitoring so schedules enabled after launch can run")
     assert_contains(scheduler, "if schedule.nextRunDate == nil { updateNextRunDate() }", "Scheduler should initialize next run when a separate UI instance enables the schedule")
+    assert_contains(scheduler, "func scheduledTime(on date: Date) -> Date", "Scheduler should align non-hourly next runs to preferred wall-clock time")
+    assert_contains(scheduler, "components.hour = schedule.preferredHour", "Scheduler should use preferred hour even after a previous run exists")
+    assert_contains(scheduler, "components.minute = schedule.preferredMinute", "Scheduler should use preferred minute even after a previous run exists")
+    assert_contains(scheduler, "while next <= now", "Scheduler should advance preferred-time candidates until they are in the future")
+    assert_not_contains(scheduler, "next = lastRun.addingTimeInterval(schedule.frequency.interval)", "Scheduler should not drift nextRunDate to the last completion time")
     assert_contains(scheduler, "func runNow() async {\n        guard !isRunningScheduledBackup else { return }\n        isRunningScheduledBackup = true", "Run Now should set the running guard before async device discovery")
 
     view = read(root, "Sources/Phosphor/Views/Backup/BackupListView.swift")
