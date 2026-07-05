@@ -264,7 +264,9 @@ final class MessageViewModel: ObservableObject {
                 }
                 let filtered = options.apply(to: baseMessages)
                 try Task.checkCancellation()
-                try exporter.exportMessages(filtered, chatTitle: chat.title, format: format, to: normalisedPath, options: options)
+                try exporter.exportMessages(filtered, chatTitle: chat.title, format: format, to: normalisedPath, options: options) {
+                    try Task.checkCancellation()
+                }
                 await MainActor.run { [weak self] in
                     guard let self, self.exportOperationID == exportID, self.backupPath == backupPath else { return }
                     self.isExporting = false
@@ -306,15 +308,23 @@ final class MessageViewModel: ObservableObject {
         exportTask = Task.detached(priority: .userInitiated) { [weak self, backupPath, exportID] in
             do {
                 let exporter = try MessageExporter(backupPath: backupPath, contacts: .empty)
-                let count = try exporter.exportAllChats(format: format, to: directory, options: options) { completed, total, title in
-                    try Task.checkCancellation()
-                    let progress = total == 0 ? 0 : Double(completed) / Double(total)
-                    Task { @MainActor [weak self] in
-                        guard let self, self.exportOperationID == exportID, self.backupPath == backupPath else { return }
-                        self.exportProgress = progress
-                        self.exportProgressText = completed >= total ? "Export complete" : "Exporting \(completed + 1) of \(total): \(title)"
+                let count = try exporter.exportAllChats(
+                    format: format,
+                    to: directory,
+                    options: options,
+                    onProgress: { completed, total, title in
+                        try Task.checkCancellation()
+                        let progress = total == 0 ? 0 : Double(completed) / Double(total)
+                        Task { @MainActor [weak self] in
+                            guard let self, self.exportOperationID == exportID, self.backupPath == backupPath else { return }
+                            self.exportProgress = progress
+                            self.exportProgressText = completed >= total ? "Export complete" : "Exporting \(completed + 1) of \(total): \(title)"
+                        }
+                    },
+                    cancellationCheck: {
+                        try Task.checkCancellation()
                     }
-                }
+                )
                 await MainActor.run { [weak self] in
                     guard let self, self.exportOperationID == exportID, self.backupPath == backupPath else { return }
                     self.isExporting = false

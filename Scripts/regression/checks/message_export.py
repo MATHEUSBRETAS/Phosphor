@@ -136,14 +136,44 @@ def test_stale_export_completion_model_requires_current_operation_and_backup(roo
 
 def test_message_exports_escape_csv_and_mbox_headers(root: Path) -> None:
     src = read(root, "Sources/Phosphor/Services/MessageExporter.swift")
-    assert_contains(src, "private func csvField", "CSV export should centralize RFC-4180 escaping and spreadsheet formula neutralization")
-    assert_contains(src, '["=", "+", "-", "@"].contains', "CSV export should neutralize spreadsheet formula-leading cells")
-    assert_contains(src, "fields.map(csvField)", "CSV export should escape every field, not only message text")
+    helper = read(root, "Sources/Phosphor/Utilities/CSVExport.swift")
+    assert_contains(helper, "enum CSVExport", "CSV export escaping should be centralized for all CSV surfaces")
+    assert_contains(helper, "static func field", "CSV helper should expose field escaping")
+    assert_contains(helper, "drop(while:", "CSV helper should detect formula payloads after leading whitespace")
+    assert_contains(helper, '["=", "+", "-", "@"].contains', "CSV helper should neutralize spreadsheet formula-leading cells")
+    assert_contains(src, "fields.map(CSVExport.field)", "Message CSV export should escape every field, not only message text")
     assert_contains(src, "private func mboxToken", "MBOX export should sanitize Message-ID/boundary tokens")
     assert_contains(src, "private func headerToken", "MBOX export should sanitize MIME header tokens")
     assert_contains(src, ".replacingOccurrences(of: \"\\n\", with: \" \")", "MBOX header encoding should strip raw newlines")
     assert_contains(src, "embeddedAttachments", "MBOX export should collect every embeddable attachment")
     assert_contains(src, "for embedded in embeddedAttachments", "MBOX export should emit all non-payload attachments, not just the first")
+
+
+def test_csv_exports_share_formula_safe_helper(root: Path) -> None:
+    helper = read(root, "Sources/Phosphor/Utilities/CSVExport.swift")
+    assert_contains(helper, "static func row", "CSV helper should centralize whole-row creation")
+    for rel in [
+        "Sources/Phosphor/Services/CalendarExtractor.swift",
+        "Sources/Phosphor/Services/CallLogExtractor.swift",
+        "Sources/Phosphor/Services/ContactsExtractor.swift",
+        "Sources/Phosphor/Services/HealthExtractor.swift",
+        "Sources/Phosphor/Services/SafariExtractor.swift",
+        "Sources/Phosphor/Services/WhatsAppExporter.swift",
+    ]:
+        src = read(root, rel)
+        assert_contains(src, "CSVExport.row", f"{rel} should use the shared CSV escaping/formula-neutralization helper")
+
+
+def test_message_export_writers_check_cancellation_inside_long_loops(root: Path) -> None:
+    src = read(root, "Sources/Phosphor/Services/MessageExporter.swift")
+    assert_contains(src, "cancellationCheck: (() throws -> Void)?", "Message exports should accept a cancellation checkpoint")
+    for func_name in ["exportCSV", "exportPlainText", "exportHTML", "exportMbox", "exportJSON"]:
+        match = re.search(rf"private func {func_name}.*?(?=\n    private func|\n    ///|\Z)", src, re.S)
+        assert match is not None, f"{func_name} not found"
+        assert_contains(match.group(0), "try cancellationCheck?()", f"{func_name} should stop promptly during large single-chat exports")
+    stage = re.search(r"private func stageAttachments.*?(?=\n    private func|\n    ///|\Z)", src, re.S)
+    assert stage is not None, "stageAttachments should exist"
+    assert_contains(stage.group(0), "try cancellationCheck?()", "HTML attachment staging should be cancellable")
 
 
 def test_minimal_sms_schema_fixture_supports_limited_attachment_query(root: Path) -> None:
