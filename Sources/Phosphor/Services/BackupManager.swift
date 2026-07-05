@@ -426,6 +426,51 @@ final class BackupManager: ObservableObject {
 
     // MARK: - Backup Creation
 
+    private func finalizeSuccessfulBackup(
+        udid: String,
+        operationID: UUID,
+        onProgress: @escaping (String) -> Void
+    ) -> Bool {
+        switch Self.backupMetadataHealth(for: udid) {
+        case .complete:
+            finishOperation(operationID)
+            backupProgress = "Backup complete"
+            backupPercent = 1.0
+            discoverBackups()
+            onProgress("Backup complete")
+            return true
+        case .missing:
+            let path = Self.backupPath(for: udid)
+            finishOperation(operationID)
+            backupProgress = "Backup metadata incomplete"
+            lastBackupFailure = BackupFailure(
+                title: "Backup Metadata Incomplete",
+                message: "The backup command finished, but Phosphor could not find complete backup metadata. Run a fresh full backup with the device unlocked and connected over USB when possible.",
+                technicalDetails: path,
+                recoveryAction: .runFullBackup,
+                udid: udid,
+                recoveryPath: path
+            )
+            lastError = lastBackupFailure?.message
+            onProgress(lastError ?? "Backup metadata incomplete.")
+            return false
+        case .incomplete(let path):
+            finishOperation(operationID)
+            backupProgress = "Backup metadata incomplete"
+            lastBackupFailure = BackupFailure(
+                title: "Backup Metadata Incomplete",
+                message: "The backup command finished, but the resulting backup metadata is incomplete. Move the incomplete folder to Trash, then run a fresh full backup with the device unlocked and connected over USB when possible.",
+                technicalDetails: path,
+                recoveryAction: .deleteIncompleteAndRunFull,
+                udid: udid,
+                recoveryPath: path
+            )
+            lastError = lastBackupFailure?.message
+            onProgress(lastError ?? "Backup metadata incomplete.")
+            return false
+        }
+    }
+
     /// Create a new backup. pymobiledevice3 primary, idevicebackup2 fallback.
     func createBackup(
         udid: String,
@@ -484,11 +529,7 @@ final class BackupManager: ObservableObject {
             onProgress: onProgress
         )
         if pySuccess {
-            finishOperation(operationID)
-            backupProgress = "Backup complete"
-            backupPercent = 1.0
-            discoverBackups()
-            return true
+            return finalizeSuccessfulBackup(udid: udid, operationID: operationID, onProgress: onProgress)
         }
         if operationWasCancelled(operationID) {
             markOperationCancelled(operationID)
@@ -532,10 +573,9 @@ final class BackupManager: ObservableObject {
                             return
                         }
                         if exitCode == 0 {
-                            self.finishOperation(operationID)
-                            self.backupProgress = "Backup complete"
-                            self.backupPercent = 1.0
-                            self.discoverBackups()
+                            let verified = self.finalizeSuccessfulBackup(udid: udid, operationID: operationID, onProgress: onProgress)
+                            continuation.resume(returning: verified)
+                            return
                         } else {
                             let combinedStderr = [pymobiledeviceStderr, idevicebackupStderr]
                                 .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -554,7 +594,7 @@ final class BackupManager: ObservableObject {
                                 stderr: combinedStderr
                             )
                         }
-                        continuation.resume(returning: exitCode == 0)
+                        continuation.resume(returning: false)
                     }
                 }
             )
@@ -719,11 +759,7 @@ final class BackupManager: ObservableObject {
                 onProgress: onProgress
             )
             if success {
-                finishOperation(operationID)
-                backupProgress = "Backup complete"
-                backupPercent = 1.0
-                discoverBackups()
-                return true
+                return finalizeSuccessfulBackup(udid: udid, operationID: operationID, onProgress: onProgress)
             }
             if operationWasCancelled(operationID) {
                 markOperationCancelled(operationID)
@@ -763,10 +799,9 @@ final class BackupManager: ObservableObject {
                             return
                         }
                         if exitCode == 0 {
-                            self.finishOperation(operationID)
-                            self.backupProgress = "Backup complete"
-                            self.backupPercent = 1.0
-                            self.discoverBackups()
+                            let verified = self.finalizeSuccessfulBackup(udid: udid, operationID: operationID, onProgress: onProgress)
+                            continuation.resume(returning: verified)
+                            return
                         } else {
                             let combinedStderr = [pymobiledeviceStderr, idevicebackupStderr]
                                 .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -785,7 +820,7 @@ final class BackupManager: ObservableObject {
                                 stderr: combinedStderr
                             )
                         }
-                        continuation.resume(returning: exitCode == 0)
+                        continuation.resume(returning: false)
                     }
                 }
             )

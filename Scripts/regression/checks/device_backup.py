@@ -121,6 +121,9 @@ def test_incremental_backups_require_existing_metadata(root: Path) -> None:
     assert_contains(manager, "expectedPath", "Incomplete-backup recovery should validate the exact failed path before moving anything")
     assert_contains(manager, "incompleteBackupHasKnownMarkers", "Incomplete-backup recovery should require recognizable iOS backup markers before moving a folder")
     assert_contains(manager, "trashItem", "Incomplete-backup recovery should move folders to Trash instead of permanently deleting them")
+    assert_contains(manager, "finalizeSuccessfulBackup", "BackupManager should verify metadata before reporting backend exit 0 as success")
+    assert_contains(manager, "Backup Metadata Incomplete", "Post-backup metadata verification failure should surface a structured recovery issue")
+    assert_contains(manager, "let verified = self.finalizeSuccessfulBackup", "idevicebackup2 fallback success must also verify metadata before returning true")
     assert_not_contains(manager, "removeItem(atPath: path)", "Incomplete-backup recovery should not permanently delete backup folders")
 
     view = read(root, "Sources/Phosphor/Views/Backup/BackupListView.swift")
