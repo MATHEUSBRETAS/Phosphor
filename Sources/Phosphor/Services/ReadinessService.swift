@@ -57,7 +57,7 @@ struct ReadinessReport {
             "",
             "Generated: \(formatter.string(from: generatedAt))",
             "Summary: \(summary)",
-            "Backup Directory: \(Self.redactedPath(backupDirectory))",
+            "Backup Directory: \(Self.redactedValue(backupDirectory))",
             "Connected Devices: \(connectedDeviceCount)",
             "Backup-capable Wi-Fi Devices: \(wifiDeviceCount)",
             "Nearby Finder/Bonjour Hints: \(nearbyWirelessHintCount)",
@@ -66,12 +66,12 @@ struct ReadinessReport {
         ]
 
         for item in items {
-            lines.append("- [\(item.status.rawValue)] \(item.title): \(item.detail)")
+            lines.append("- [\(item.status.rawValue)] \(item.title): \(Self.redactedValue(item.detail))")
             if let recoveryAction = item.recoveryAction, !recoveryAction.isEmpty {
-                lines.append("  - Recovery: \(recoveryAction)")
+                lines.append("  - Recovery: \(Self.redactedValue(recoveryAction))")
             }
             if let technicalDetail = item.technicalDetail, !technicalDetail.isEmpty {
-                lines.append("  - Technical: \(Self.redactedPath(technicalDetail))")
+                lines.append("  - Technical: \(Self.redactedValue(technicalDetail))")
             }
         }
 
@@ -83,9 +83,18 @@ struct ReadinessReport {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    private static func redactedPath(_ value: String) -> String {
+    private static func redactedValue(_ value: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return value.replacingOccurrences(of: home, with: "~")
+        var redacted = value.replacingOccurrences(of: home, with: "~")
+        redacted = replacing(pattern: "\\b[A-Fa-f0-9]{8}-[A-Fa-f0-9]{16}\\b", in: redacted, with: "<device-id>")
+        redacted = replacing(pattern: "\\b[A-Fa-f0-9]{40}\\b", in: redacted, with: "<device-id>")
+        return redacted
+    }
+
+    private static func replacing(pattern: String, in value: String, with replacement: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return value }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        return regex.stringByReplacingMatches(in: value, range: range, withTemplate: replacement)
     }
 }
 
@@ -153,13 +162,15 @@ enum ReadinessService {
 
     private static func toolReadinessItem(_ dependencies: [String: Bool]) -> ReadinessItem {
         let hasPymobiledevice = dependencies["pymobiledevice3"] == true
-        let hasLibimobiledeviceCore = dependencies["idevice_id"] == true && dependencies["ideviceinfo"] == true
+        let hasLibimobiledeviceBackup = dependencies["idevice_id"] == true &&
+            dependencies["ideviceinfo"] == true &&
+            dependencies["idevicebackup2"] == true
         let missing = dependencies.filter { !$0.value }.map(\.key).sorted()
 
-        if hasPymobiledevice || hasLibimobiledeviceCore {
+        if hasPymobiledevice || hasLibimobiledeviceBackup {
             let detail = hasPymobiledevice
                 ? "pymobiledevice3 is available for modern iOS workflows; libimobiledevice tools remain optional fallbacks."
-                : "libimobiledevice core tools are available; install pymobiledevice3 for best iOS 17-26 support."
+                : "libimobiledevice backup tools are available; install pymobiledevice3 for best iOS 17-26 support."
             return ReadinessItem(
                 title: "Tool Readiness",
                 detail: detail,
@@ -172,14 +183,14 @@ enum ReadinessService {
             title: "Tool Readiness",
             detail: "No supported iOS command-line backend is available.",
             status: .blocked,
-            recoveryAction: "Install pymobiledevice3, or install libimobiledevice tools including idevice_id and ideviceinfo.",
+            recoveryAction: "Install pymobiledevice3, or install libimobiledevice tools including idevice_id, ideviceinfo, and idevicebackup2.",
             technicalDetail: missing.isEmpty ? nil : "Missing tools: \(missing.joined(separator: ", "))"
         )
     }
 
     @MainActor
     private static func backupFolderItem(path: String) -> ReadinessItem {
-        let validation = BackupManager.validateBackupDirectory(path)
+        let validation = BackupManager.validateBackupDirectory(path, createIfMissing: false)
         if validation.ok {
             return ReadinessItem(
                 title: "Backup Folder",
@@ -266,7 +277,7 @@ enum ReadinessService {
     }
 
     private static func nextSteps(devices: [DeviceInfo], dependencies: [String: Bool]) -> String {
-        if dependencies["pymobiledevice3"] != true && dependencies["idevice_id"] != true {
+        if !hasBackupTooling(dependencies) {
             return "Install the required device tools, then re-run the readiness check."
         }
         if devices.isEmpty {
@@ -276,8 +287,15 @@ enum ReadinessService {
     }
 
     private static func nextStepStatus(devices: [DeviceInfo], dependencies: [String: Bool]) -> ReadinessStatus {
-        if dependencies["pymobiledevice3"] != true && dependencies["idevice_id"] != true { return .blocked }
+        if !hasBackupTooling(dependencies) { return .blocked }
         if devices.isEmpty { return .warning }
         return .ready
+    }
+
+    private static func hasBackupTooling(_ dependencies: [String: Bool]) -> Bool {
+        dependencies["pymobiledevice3"] == true ||
+            (dependencies["idevice_id"] == true &&
+             dependencies["ideviceinfo"] == true &&
+             dependencies["idevicebackup2"] == true)
     }
 }

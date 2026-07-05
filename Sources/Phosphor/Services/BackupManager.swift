@@ -98,10 +98,13 @@ final class BackupManager: ObservableObject {
     /// Preflight check: verify the active backup directory exists and is readable/writable
     /// by this process. ~/Library/Application Support/MobileSync/Backup is TCC-protected
     /// on macOS 10.15+ and requires Full Disk Access for sandboxed or unsigned apps.
-    static func validateBackupDirectory(_ path: String) -> (ok: Bool, reason: String?) {
+    static func validateBackupDirectory(_ path: String, createIfMissing: Bool = true) -> (ok: Bool, reason: String?) {
         let fm = FileManager.default
         var isDir: ObjCBool = false
         if !fm.fileExists(atPath: path, isDirectory: &isDir) {
+            guard createIfMissing else {
+                return (false, "Backup directory does not exist at \(path).")
+            }
             do {
                 try fm.createDirectory(atPath: path, withIntermediateDirectories: true)
             } catch {

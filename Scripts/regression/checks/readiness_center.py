@@ -19,10 +19,31 @@ def test_readiness_service_contract(root: Path) -> None:
         "static func evaluate",
         "static func dependencyStatus",
         "Task.detached",
-        "BackupManager.validateBackupDirectory",
+        "BackupManager.validateBackupDirectory(path, createIfMissing: false)",
         "diagnosticMarkdown",
+        "redactedValue(item.detail)",
+        "idevicebackup2",
     ]:
         assert token in src, f"ReadinessService missing {token}"
+
+
+def test_readiness_diagnostics_are_redacted_and_side_effect_free(root: Path) -> None:
+    readiness = read(root, "Sources/Phosphor/Services/ReadinessService.swift")
+    backup_manager = read(root, "Sources/Phosphor/Services/BackupManager.swift")
+    assert "redactedValue(item.detail)" in readiness, "diagnostic detail text must be redacted before export"
+    assert "redactedValue(recoveryAction)" in readiness, "diagnostic recovery text must be redacted before export"
+    assert "redactedValue(technicalDetail)" in readiness, "diagnostic technical detail must be redacted before export"
+    assert "[A-Fa-f0-9]{8}-[A-Fa-f0-9]{16}" in readiness, "modern UDID-like values should be redacted"
+    assert "[A-Fa-f0-9]{40}" in readiness, "legacy 40-char UDIDs should be redacted"
+    assert "createIfMissing: Bool = true" in backup_manager, "backup validation should let callers opt out of creation"
+    assert "BackupManager.validateBackupDirectory(path, createIfMissing: false)" in readiness, "readiness checks should inspect without creating folders"
+
+
+def test_readiness_tool_classification_requires_backup_backend(root: Path) -> None:
+    src = read(root, "Sources/Phosphor/Services/ReadinessService.swift")
+    assert "hasLibimobiledeviceBackup" in src, "libimobiledevice readiness should be backup-specific"
+    assert "dependencies[\"idevicebackup2\"] == true" in src, "libimobiledevice backup readiness requires idevicebackup2"
+    assert "hasBackupTooling" in src, "next-step status should use the same backup-tool readiness as Tool Readiness"
 
 
 def test_dependency_checks_are_not_wrapped_in_global_dispatch(root: Path) -> None:
