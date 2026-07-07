@@ -3,11 +3,10 @@ import CoreText
 import Foundation
 
 /// Writes paginated, iMessage-inspired transcript PDFs without loading a WebView
-/// or holding a giant rendered document in memory. Messages are drawn as rounded
-/// chat bubbles: outgoing messages are right-aligned blue bubbles and incoming
-/// messages are left-aligned light-gray bubbles. iMessage metadata that Phosphor
-/// extracts (tapbacks, rich links, attachments, service/read status) is rendered
-/// as visible transcript affordances instead of being flattened into plain text.
+/// or holding a giant rendered document in memory. The output favors a natural
+/// Messages-style conversation: metadata is tucked into the bubble as reply
+/// previews, media/link cards, or tapback badges instead of being rendered as a
+/// list of transcript pills after each message.
 enum PDFTranscriptWriter {
     struct Entry {
         let title: String
@@ -44,13 +43,22 @@ enum PDFTranscriptWriter {
         let contentWidth = mediaBox.width - (margin * 2)
         let pageHeight = mediaBox.height
         let pageBottom = pageHeight - margin
-        let bubbleMaxWidth = contentWidth * 0.74
+        let bubbleMaxWidth = contentWidth * 0.72
         let bubblePaddingX: CGFloat = 13
         let bubblePaddingY: CGFloat = 9
         let bubbleRadius: CGFloat = 17
-        let featureSpacing: CGFloat = 6
+        let componentGap: CGFloat = 6
         var y: CGFloat = margin
         var pageNumber = 0
+        let showIncomingSenderLabels = Set(entries.filter { !$0.isFromMe && !$0.title.isEmpty }.map { $0.title }).count > 1
+        var messagesSinceTimestamp = 99
+
+        struct BubbleCard {
+            let text: NSAttributedString
+            let fill: CGColor
+            let accent: CGColor?
+            let height: CGFloat
+        }
 
         func beginPage() {
             context.beginPDFPage(nil)
@@ -85,6 +93,20 @@ enum PDFTranscriptWriter {
             y += metaHeight + 18
         }
 
+        func drawTimestampIfNeeded(_ value: String) {
+            guard !value.isEmpty else { return }
+            // Real Messages uses occasional centered time separators, not a log
+            // timestamp above every bubble. Keep the first timestamp, then space
+            // later separators out so the page reads like a conversation.
+            guard messagesSinceTimestamp >= 8 else { return }
+            let meta = attributed(value, font: .systemFont(ofSize: 8.5), color: secondaryTextColor, alignment: .center)
+            let metaHeight = measuredHeight(meta, width: contentWidth)
+            ensureSpace(metaHeight + 18)
+            draw(meta, in: CGRect(x: margin, y: y, width: contentWidth, height: metaHeight), context: context, pageHeight: pageHeight)
+            y += metaHeight + 7
+            messagesSinceTimestamp = 0
+        }
+
         func drawRoundedRect(x: CGFloat, topY: CGFloat, width: CGFloat, height: CGFloat, radius: CGFloat, fill: CGColor) {
             let rect = CGRect(x: x, y: pageHeight - topY - height, width: width, height: height)
             let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
@@ -93,44 +115,43 @@ enum PDFTranscriptWriter {
             context.fillPath()
         }
 
-        func drawTextSegment(_ text: NSAttributedString,
-                             bubbleX: CGFloat,
-                             bubbleTopY: CGFloat,
-                             textWidth: CGFloat,
-                             textHeight: CGFloat,
-                             bubbleFill: CGColor) -> Int {
-            let bubbleHeight = textHeight + (bubblePaddingY * 2)
-            let bubbleWidth = textWidth + (bubblePaddingX * 2)
-            drawRoundedRect(x: bubbleX, topY: bubbleTopY, width: bubbleWidth, height: bubbleHeight, radius: bubbleRadius, fill: bubbleFill)
-            return draw(
-                text,
-                in: CGRect(x: bubbleX + bubblePaddingX, y: bubbleTopY + bubblePaddingY, width: textWidth, height: textHeight),
-                context: context,
-                pageHeight: pageHeight
+        func makeCard(_ raw: String, width: CGFloat, isFromMe: Bool, accent: CGColor? = nil) -> BubbleCard {
+            let text = attributed(raw, font: .systemFont(ofSize: 9.5), color: isFromMe ? outgoingTextColor : primaryTextColor)
+            let height = measuredHeight(text, width: width - 18) + 9
+            return BubbleCard(
+                text: text,
+                fill: isFromMe ? outgoingInlineCardColor : incomingInlineCardColor,
+                accent: accent,
+                height: height
             )
         }
 
-        func featureText(_ raw: String, isFromMe: Bool) -> NSAttributedString {
-            attributed(raw, font: .systemFont(ofSize: 9.5), color: isFromMe ? outgoingTextColor : primaryTextColor)
+        func cards(for entry: Entry, width: CGFloat) -> [BubbleCard] {
+            var out: [BubbleCard] = []
+            if let inlineReply = entry.inlineReply, !inlineReply.isEmpty {
+                out.append(makeCard("↩︎ Inline reply: \(inlineReply)", width: width, isFromMe: entry.isFromMe, accent: entry.isFromMe ? outgoingTextColor.cgColor : replyAccentColor))
+            }
+            if let link = entry.linkURL, !link.isEmpty {
+                out.append(makeCard("🔗 \(link)", width: width, isFromMe: entry.isFromMe))
+            }
+            out.append(contentsOf: entry.attachments.map { makeCard("📎 \($0)", width: width, isFromMe: entry.isFromMe) })
+            return out
         }
 
-        func drawFeaturePill(_ raw: String, x: CGFloat, topY: CGFloat, width: CGFloat, isFromMe: Bool) -> CGFloat {
-            let text = featureText(raw, isFromMe: isFromMe)
-            let height = measuredHeight(text, width: width - 18) + 8
-            drawRoundedRect(
-                x: x,
-                topY: topY,
-                width: width,
-                height: height,
-                radius: 10,
-                fill: isFromMe ? outgoingFeatureColor : incomingFeatureColor
-            )
-            draw(text, in: CGRect(x: x + 9, y: topY + 4, width: width - 18, height: height - 8), context: context, pageHeight: pageHeight)
-            return height
+        func drawCard(_ card: BubbleCard, x: CGFloat, topY: CGFloat, width: CGFloat) {
+            drawRoundedRect(x: x, topY: topY, width: width, height: card.height, radius: 11, fill: card.fill)
+            if let accent = card.accent {
+                context.setFillColor(accent)
+                context.fill(CGRect(x: x + 7, y: pageHeight - topY - card.height + 6, width: 2, height: max(4, card.height - 12)))
+            }
+            draw(card.text, in: CGRect(x: x + 12, y: topY + 4, width: width - 20, height: card.height - 8), context: context, pageHeight: pageHeight)
         }
 
         func drawReactionBadge(_ entry: Entry, bubbleX: CGFloat, bubbleTopY: CGFloat, bubbleWidth: CGFloat) {
             guard !entry.reactions.isEmpty else { return }
+            // A tapback is visual state on a bubble in Messages, not a separate
+            // transcript row. Show the compact badge only, with the sender/type
+            // text preserved inside it when available.
             let badgeText = attributed(entry.reactions.joined(separator: "  "), font: .systemFont(ofSize: 10, weight: .medium), color: primaryTextColor)
             let badgeTextWidth = min(180, max(24, measuredSize(badgeText, width: 180).width))
             let badgeWidth = badgeTextWidth + 14
@@ -146,103 +167,120 @@ enum PDFTranscriptWriter {
             draw(badgeText, in: CGRect(x: badgeX + 7, y: badgeY + 3, width: badgeTextWidth, height: badgeHeight - 6), context: context, pageHeight: pageHeight)
         }
 
-        func drawMessageFeatures(_ entry: Entry, bubbleX: CGFloat, textWidth: CGFloat) {
-            var features: [String] = []
-            if let inlineReply = entry.inlineReply, !inlineReply.isEmpty { features.append("↩︎ Inline reply: \(inlineReply)") }
-            if !entry.reactions.isEmpty { features.append("Tapbacks: \(entry.reactions.joined(separator: ", "))") }
-            if let link = entry.linkURL, !link.isEmpty { features.append("🔗 \(link)") }
-            features.append(contentsOf: entry.attachments.map { "📎 \($0)" })
-            if let status = entry.status, !status.isEmpty { features.append("ℹ︎ \(status)") }
+        func drawStatus(_ status: String?, bubbleX: CGFloat, bubbleWidth: CGFloat, isFromMe: Bool) {
+            guard let status, !status.isEmpty else { return }
+            let statusText = attributed(status, font: .systemFont(ofSize: 8.5), color: secondaryTextColor, alignment: isFromMe ? .right : .left)
+            let width = min(bubbleWidth, max(60, measuredSize(statusText, width: bubbleWidth).width))
+            let height = measuredHeight(statusText, width: width)
+            let x = isFromMe ? bubbleX + bubbleWidth - width : bubbleX
+            ensureSpace(height + 3)
+            draw(statusText, in: CGRect(x: x, y: y, width: width, height: height), context: context, pageHeight: pageHeight)
+            y += height + 3
+        }
 
-            guard !features.isEmpty else { return }
-            let bubbleWidth = textWidth + (bubblePaddingX * 2)
-            for feature in features {
-                ensureSpace(26)
-                let height = drawFeaturePill(feature, x: bubbleX + bubblePaddingX, topY: y, width: textWidth, isFromMe: entry.isFromMe)
-                y += height + featureSpacing
+        func drawBubbleSegment(entry: Entry,
+                               bubbleX: CGFloat,
+                               bubbleWidth: CGFloat,
+                               textWidth: CGFloat,
+                               cards: [BubbleCard],
+                               bodyText: NSAttributedString,
+                               bodyHeight: CGFloat,
+                               bodyOffset: Int,
+                               includeCards: Bool) -> Int {
+            let cardHeight = includeCards ? cards.reduce(CGFloat(0)) { $0 + $1.height } + CGFloat(max(cards.count - 1, 0)) * componentGap : 0
+            let contentGap = includeCards && !cards.isEmpty && bodyText.length > 0 ? componentGap : 0
+            let bubbleHeight = bubblePaddingY + cardHeight + contentGap + bodyHeight + bubblePaddingY
+            let bubbleTopY = y
+            drawRoundedRect(x: bubbleX, topY: bubbleTopY, width: bubbleWidth, height: bubbleHeight, radius: bubbleRadius, fill: entry.isFromMe ? outgoingBubbleColor : incomingBubbleColor)
+
+            var innerY = bubbleTopY + bubblePaddingY
+            if includeCards {
+                for card in cards {
+                    drawCard(card, x: bubbleX + bubblePaddingX, topY: innerY, width: textWidth)
+                    innerY += card.height + componentGap
+                }
+                if !cards.isEmpty { innerY -= componentGap }
+                if !cards.isEmpty && bodyText.length > 0 { innerY += contentGap }
             }
-            // Keep feature pills visually inside the parent bubble column by adding
-            // a small final spacer that mirrors Messages' stacked attachment cards.
-            _ = bubbleWidth
+
+            let visible = draw(
+                bodyText,
+                in: CGRect(x: bubbleX + bubblePaddingX, y: innerY, width: textWidth, height: bodyHeight),
+                context: context,
+                pageHeight: pageHeight
+            )
+
+            if bodyOffset == 0 {
+                drawReactionBadge(entry, bubbleX: bubbleX, bubbleTopY: bubbleTopY, bubbleWidth: bubbleWidth)
+            }
+            y += bubbleHeight + 3
+            return visible
         }
 
         func drawMessage(_ entry: Entry) throws {
-            let bubbleFill = entry.isFromMe ? outgoingBubbleColor : incomingBubbleColor
-            let textColor = entry.isFromMe ? outgoingTextColor : primaryTextColor
-            let text = attributed(entry.body.isEmpty ? "[Empty message]" : entry.body,
-                                  font: .systemFont(ofSize: 11.5),
-                                  color: textColor)
-            let meta = attributed(entry.subtitle,
-                                  font: .systemFont(ofSize: 8.5),
-                                  color: secondaryTextColor,
-                                  alignment: .center)
-            let sender = attributed(entry.title,
-                                    font: .systemFont(ofSize: 9, weight: .medium),
-                                    color: secondaryTextColor)
+            drawTimestampIfNeeded(entry.subtitle)
 
-            let maxTextWidth = bubbleMaxWidth - (bubblePaddingX * 2)
-            let preferredTextSize = measuredSize(text, width: maxTextWidth)
-            let textWidth = min(maxTextWidth, max(80, ceil(preferredTextSize.width)))
-            let metaHeight = entry.subtitle.isEmpty ? CGFloat(0) : measuredHeight(meta, width: contentWidth)
-            ensureSpace(max(28, metaHeight + 24))
-
-            if !entry.subtitle.isEmpty {
-                draw(meta, in: CGRect(x: margin, y: y, width: contentWidth, height: metaHeight), context: context, pageHeight: pageHeight)
-                y += metaHeight + 7
-            }
-
-            if !entry.isFromMe, !entry.title.isEmpty {
+            if !entry.isFromMe, showIncomingSenderLabels, !entry.title.isEmpty {
+                let sender = attributed(entry.title, font: .systemFont(ofSize: 9, weight: .medium), color: secondaryTextColor)
                 let senderHeight = measuredHeight(sender, width: bubbleMaxWidth)
-                ensureSpace(senderHeight + 18)
+                ensureSpace(senderHeight + 16)
                 draw(sender, in: CGRect(x: margin + 6, y: y, width: bubbleMaxWidth, height: senderHeight), context: context, pageHeight: pageHeight)
                 y += senderHeight + 2
             }
 
+            let textColor = entry.isFromMe ? outgoingTextColor : primaryTextColor
+            let text = attributed(entry.body.isEmpty ? "[Empty message]" : entry.body,
+                                  font: .systemFont(ofSize: 11.5),
+                                  color: textColor)
+            let maxTextWidth = bubbleMaxWidth - (bubblePaddingX * 2)
+            let cardWidthProbe = maxTextWidth
+            let bubbleCards = cards(for: entry, width: cardWidthProbe)
+            let preferredBodyWidth = measuredSize(text, width: maxTextWidth).width
+            let preferredCardWidth = bubbleCards.reduce(CGFloat(0)) { max($0, measuredSize($1.text, width: maxTextWidth).width + 20) }
+            let textWidth = min(maxTextWidth, max(86, ceil(max(preferredBodyWidth, preferredCardWidth))))
+            let bubbleWidth = textWidth + (bubblePaddingX * 2)
+            let bubbleX = entry.isFromMe ? margin + contentWidth - bubbleWidth : margin
+
             var offset = 0
-            var lastBubbleX: CGFloat = entry.isFromMe ? margin + contentWidth - (textWidth + bubblePaddingX * 2) : margin
-            var didDrawPrimaryBubble = false
-            while offset < text.length {
+            var includeCards = true
+            repeat {
                 try cancellationCheck?()
                 let remaining = text.attributedSubstring(from: NSRange(location: offset, length: text.length - offset))
-                let remainingHeight = measuredHeight(remaining, width: textWidth)
+                let cardHeight = includeCards ? bubbleCards.reduce(CGFloat(0)) { $0 + $1.height } + CGFloat(max(bubbleCards.count - 1, 0)) * componentGap : 0
+                let cardsAndPadding = bubblePaddingY + cardHeight + (includeCards && !bubbleCards.isEmpty && remaining.length > 0 ? componentGap : 0) + bubblePaddingY
 
-                var availableTextHeight = pageBottom - y - (bubblePaddingY * 2)
-                if availableTextHeight < 24 {
+                var availableBodyHeight = pageBottom - y - cardsAndPadding
+                if availableBodyHeight < 24 {
                     endPage()
                     beginPage()
-                    availableTextHeight = pageBottom - y - (bubblePaddingY * 2)
+                    availableBodyHeight = pageBottom - y - cardsAndPadding
                 }
 
-                let segmentTextHeight = min(remainingHeight, availableTextHeight)
-                let bubbleHeight = segmentTextHeight + (bubblePaddingY * 2)
-                let bubbleWidth = textWidth + (bubblePaddingX * 2)
-                let bubbleX = entry.isFromMe ? margin + contentWidth - bubbleWidth : margin
-                let bubbleTopY = y
-                lastBubbleX = bubbleX
-
-                let visible = drawTextSegment(
-                    remaining,
+                let remainingHeight = measuredHeight(remaining, width: textWidth)
+                let segmentBodyHeight = min(remainingHeight, availableBodyHeight)
+                ensureSpace(cardsAndPadding + segmentBodyHeight)
+                let visible = drawBubbleSegment(
+                    entry: entry,
                     bubbleX: bubbleX,
-                    bubbleTopY: bubbleTopY,
+                    bubbleWidth: bubbleWidth,
                     textWidth: textWidth,
-                    textHeight: segmentTextHeight,
-                    bubbleFill: bubbleFill
+                    cards: bubbleCards,
+                    bodyText: remaining,
+                    bodyHeight: segmentBodyHeight,
+                    bodyOffset: offset,
+                    includeCards: includeCards
                 )
-                if !didDrawPrimaryBubble {
-                    drawReactionBadge(entry, bubbleX: bubbleX, bubbleTopY: bubbleTopY, bubbleWidth: bubbleWidth)
-                    didDrawPrimaryBubble = true
-                }
-
-                y += bubbleHeight + 6
                 if visible <= 0 { break }
                 offset += visible
+                includeCards = false
                 if offset < text.length {
                     endPage()
                     beginPage()
                 }
-            }
+            } while offset < text.length
 
-            drawMessageFeatures(entry, bubbleX: lastBubbleX, textWidth: textWidth)
+            drawStatus(entry.status, bubbleX: bubbleX, bubbleWidth: bubbleWidth, isFromMe: entry.isFromMe)
+            messagesSinceTimestamp += 1
             y += 6
         }
 
@@ -264,10 +302,11 @@ enum PDFTranscriptWriter {
     private static let outgoingTextColor = NSColor.white
     private static let outgoingBubbleColor = NSColor(calibratedRed: 0.00, green: 0.478, blue: 1.00, alpha: 1).cgColor
     private static let incomingBubbleColor = NSColor(calibratedRed: 0.898, green: 0.898, blue: 0.918, alpha: 1).cgColor
-    private static let outgoingFeatureColor = NSColor(calibratedRed: 0.00, green: 0.39, blue: 0.92, alpha: 0.92).cgColor
-    private static let incomingFeatureColor = NSColor(calibratedWhite: 1, alpha: 0.82).cgColor
+    private static let outgoingInlineCardColor = NSColor(calibratedWhite: 1, alpha: 0.18).cgColor
+    private static let incomingInlineCardColor = NSColor(calibratedWhite: 1, alpha: 0.62).cgColor
     private static let reactionBadgeColor = NSColor.white.cgColor
     private static let reactionBadgeBorderColor = NSColor(calibratedWhite: 0.82, alpha: 1).cgColor
+    private static let replyAccentColor = NSColor(calibratedWhite: 0.62, alpha: 1).cgColor
 
     private static func attributed(_ raw: String,
                                    font: NSFont,

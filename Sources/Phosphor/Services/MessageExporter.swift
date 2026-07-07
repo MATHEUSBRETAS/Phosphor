@@ -607,19 +607,18 @@ final class MessageExporter {
         let entries = messages.map { msg -> PDFTranscriptWriter.Entry in
             let visibleAttachments = includeAttachments ? msg.attachments.filter { !$0.isPluginPayload } : []
             let body = (msg.text?.isEmpty == false) ? (msg.text ?? "") : msg.displayText
-            let reactionBadges = msg.reactions.map { reaction in
-                "\(reaction.type.emoji) \(reaction.sender) \(reaction.type.label.lowercased())"
-            }
+            let reactionBadges = msg.reactions.map { $0.type.emoji }
             let attachmentSummaries = visibleAttachments.map { attachment in
                 var parts: [String] = [attachment.displayName]
                 if let mime = attachment.mimeType, !mime.isEmpty { parts.append(mime) }
                 if attachment.totalBytes > 0 { parts.append(ByteCountFormatter.string(fromByteCount: Int64(attachment.totalBytes), countStyle: .file)) }
                 return parts.joined(separator: " • ")
             }
-            let statusParts = [
-                msg.service.isEmpty ? nil : msg.service,
-                msg.isFromMe ? nil : (msg.isRead ? "read" : "unread")
-            ].compactMap { $0 }
+            // Keep PDF exports conversation-like: don't print "iMessage" or
+            // read/unread under every bubble. Surface the service only when it
+            // differs from iMessage, where it helps explain SMS/MMS fallback.
+            let serviceStatus = msg.service.isEmpty || msg.service.lowercased() == "imessage" ? nil : msg.service
+            let statusParts = [serviceStatus].compactMap { $0 }
 
             return PDFTranscriptWriter.Entry(
                 title: msg.senderLabel,
