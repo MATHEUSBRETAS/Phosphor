@@ -15,6 +15,7 @@ enum PDFTranscriptWriter {
         let body: String
         let isFromMe: Bool
         var reactions: [String] = []
+        var inlineReply: String? = nil
         var attachments: [String] = []
         var linkURL: String? = nil
         var status: String? = nil
@@ -147,6 +148,7 @@ enum PDFTranscriptWriter {
 
         func drawMessageFeatures(_ entry: Entry, bubbleX: CGFloat, textWidth: CGFloat) {
             var features: [String] = []
+            if let inlineReply = entry.inlineReply, !inlineReply.isEmpty { features.append("↩︎ Inline reply: \(inlineReply)") }
             if !entry.reactions.isEmpty { features.append("Tapbacks: \(entry.reactions.joined(separator: ", "))") }
             if let link = entry.linkURL, !link.isEmpty { features.append("🔗 \(link)") }
             features.append(contentsOf: entry.attachments.map { "📎 \($0)" })
