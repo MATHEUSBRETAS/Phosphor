@@ -39,6 +39,10 @@ def test_message_pdf_export_is_registered_and_uses_native_pdf_writer(root: Path)
     assert_contains(wa, "case .pdf:", "WhatsApp exporter should handle the shared PDF format")
     assert_contains(writer, "CGContext(consumer: consumer, mediaBox:", "PDF writer should render native PDF output")
     assert_contains(writer, "CTFramesetterCreateWithAttributedString", "PDF writer should measure and wrap text")
+    assert_contains(writer, "CGPath(roundedRect:", "PDF writer should render rounded iMessage-style bubbles")
+    assert_contains(writer, "outgoingBubbleColor", "PDF writer should distinguish outgoing blue bubbles")
+    assert_contains(writer, "incomingBubbleColor", "PDF writer should distinguish incoming gray bubbles")
+    assert_contains(writer, "entry.isFromMe ? margin + contentWidth - bubbleWidth : margin", "PDF writer should right-align outgoing bubbles and left-align incoming bubbles")
 
 
 
