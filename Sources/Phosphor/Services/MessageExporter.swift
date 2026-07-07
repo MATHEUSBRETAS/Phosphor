@@ -504,6 +504,8 @@ final class MessageExporter {
             try exportCSV(messages: messages, chatTitle: chatTitle, to: path)
         case .txt:
             try exportPlainText(messages: messages, chatTitle: chatTitle, to: path)
+        case .pdf:
+            try exportPDF(messages: messages, chatTitle: chatTitle, to: path, includeAttachments: options.includeAttachments)
         case .html:
             try exportHTML(messages: messages, chatTitle: chatTitle, to: path, includeAttachments: options.includeAttachments)
         case .json:
@@ -573,6 +575,43 @@ final class MessageExporter {
             }
             try append("\n")
         }
+    }
+
+    private func exportPDF(messages: [Message], chatTitle: String, to path: String, includeAttachments: Bool = true, cancellationCheck: (() throws -> Void)? = nil) throws {
+        let entries = messages.map { msg -> PDFTranscriptWriter.Entry in
+            var body = msg.text ?? ""
+            if let link = msg.linkURL, !link.isEmpty {
+                if !body.isEmpty { body += "\n\n" }
+                body += "Link: \(link)"
+            }
+            if includeAttachments {
+                let attachments = msg.attachments.filter { !$0.isPluginPayload }
+                if !attachments.isEmpty {
+                    if !body.isEmpty { body += "\n\n" }
+                    body += attachments.map { "Attachment: \($0.displayName)" }.joined(separator: "\n")
+                }
+            }
+            if body.isEmpty { body = msg.displayText }
+
+            let reactions = msg.reactions
+                .map { "\($0.type.emoji) \($0.sender) \($0.type.label.lowercased())" }
+                .joined(separator: "; ")
+            let subtitle = reactions.isEmpty ? msg.formattedDate : "\(msg.formattedDate) • \(reactions)"
+            return PDFTranscriptWriter.Entry(
+                title: msg.senderLabel,
+                subtitle: subtitle,
+                body: body,
+                isFromMe: msg.isFromMe
+            )
+        }
+
+        try PDFTranscriptWriter.write(
+            title: chatTitle,
+            subtitle: "Exported by Phosphor • \(Date().shortString) • \(messages.count) messages",
+            entries: entries,
+            to: path,
+            cancellationCheck: cancellationCheck
+        )
     }
 
     /// Copy referenced attachments into a sibling `<export>_attachments` folder so the

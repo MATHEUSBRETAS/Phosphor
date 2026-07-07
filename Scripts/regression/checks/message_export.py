@@ -25,6 +25,22 @@ def test_streaming_exports_truncate_before_write(root: Path) -> None:
         assert_contains(body, "FileHandle(forWritingTo: outputURL)", f"{func_name} must stream through FileHandle")
 
 
+def test_message_pdf_export_is_registered_and_uses_native_pdf_writer(root: Path) -> None:
+    model = read(root, "Sources/Phosphor/Models/Message.swift")
+    exporter = read(root, "Sources/Phosphor/Services/MessageExporter.swift")
+    wa = read(root, "Sources/Phosphor/Services/WhatsAppExporter.swift")
+    view = read(root, "Sources/Phosphor/Views/Messages/MessageListView.swift")
+    writer = read(root, "Sources/Phosphor/Utilities/PDFTranscriptWriter.swift")
+    assert_contains(model, "case pdf = \"PDF\"", "Message export formats should include PDF")
+    assert_contains(model, "case .pdf: return \"pdf\"", "PDF exports should use .pdf filenames")
+    assert_contains(view, "case .pdf: return .pdf", "Save panels should advertise the PDF content type")
+    assert_contains(exporter, "case .pdf:", "iMessage exporter should dispatch PDF exports")
+    assert_contains(exporter, "try exportPDF", "iMessage exporter should call a PDF writer")
+    assert_contains(wa, "case .pdf:", "WhatsApp exporter should handle the shared PDF format")
+    assert_contains(writer, "CGContext(consumer: consumer, mediaBox:", "PDF writer should render native PDF output")
+    assert_contains(writer, "CTFramesetterCreateWithAttributedString", "PDF writer should measure and wrap text")
+
+
 
 
 

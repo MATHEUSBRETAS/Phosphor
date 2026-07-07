@@ -165,6 +165,7 @@ enum ReactionType: Int, CaseIterable {
 enum MessageExportFormat: String, CaseIterable {
     case csv = "CSV"
     case txt = "Plain Text"
+    case pdf = "PDF"
     case html = "HTML"
     case json = "JSON"
     case mbox = "MBOX (Mail)"
@@ -173,6 +174,7 @@ enum MessageExportFormat: String, CaseIterable {
         switch self {
         case .csv: return "csv"
         case .txt: return "txt"
+        case .pdf: return "pdf"
         case .html: return "html"
         case .json: return "json"
         case .mbox: return "mbox"
