@@ -135,7 +135,7 @@ final class NativeBackupService: ObservableObject {
     // MARK: - Method 3: pymobiledevice3
 
     private func pymobiledeviceBackup(udid: String, onProgress: @escaping (String) -> Void) async -> Bool {
-        onProgress("Checking for pymobiledevice3...")
+        onProgress("Backing up")
 
         guard PyMobileDevice.available() else {
             lastError = """
@@ -146,7 +146,7 @@ final class NativeBackupService: ObservableObject {
             return false
         }
 
-        onProgress("Creating backup via pymobiledevice3...")
+        onProgress("Backing up")
 
         let backupDir = BackupManager.activeBackupDir
         let result = await PyMobileDevice.runAsync(["backup2", "backup", "--udid", udid, "--full", backupDir], timeout: 3600)

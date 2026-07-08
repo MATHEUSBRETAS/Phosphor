@@ -563,6 +563,30 @@ enum PyMobileDevice {
         return result.succeeded
     }
 
+    /// Enable or disable Finder-style Wi-Fi connections for a USB-connected device.
+    ///
+    /// This maps to Finder's "Show this iPhone when on Wi-Fi" checkbox. It must be
+    /// run while the device is reachable over USB/lockdown; Bonjour-only devices are
+    /// discovery hints and cannot be promoted to backup-capable Wi-Fi targets here.
+    static func setWiFiConnections(udid: String? = nil, enabled: Bool) async -> Shell.Result {
+        var args = ["lockdown", "wifi-connections", "--state", enabled ? "on" : "off"]
+        if let udid { args += ["--udid", udid] }
+        let result = await runAsync(args, timeout: 20)
+        return normalizeLockdownResult(result)
+    }
+
+    private static func normalizeLockdownResult(_ result: Shell.Result) -> Shell.Result {
+        let combined = [result.stdout, result.stderr]
+            .joined(separator: "\n")
+            .lowercased()
+        let errorMarkers = ["error ", "error:", "device not found", "no device", "failed"]
+        guard result.succeeded, errorMarkers.contains(where: { combined.contains($0) }) else {
+            return result
+        }
+        let stderr = result.stderr.isEmpty ? "pymobiledevice3 reported an error despite exit code 0" : result.stderr
+        return Shell.Result(exitCode: -1, stdout: result.stdout, stderr: stderr)
+    }
+
     /// Unpair device.
     static func unpair(udid: String? = nil) async -> Bool {
         var args = ["lockdown", "unpair"]

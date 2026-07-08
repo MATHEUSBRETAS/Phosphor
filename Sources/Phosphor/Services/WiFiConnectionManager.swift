@@ -18,11 +18,24 @@ final class WiFiConnectionManager: ObservableObject {
 
     /// Enable Wi-Fi sync on a USB-connected device.
     func enableWiFiSync(udid: String) async -> Bool {
-        // Primary: pymobiledevice3
-        if await PyMobileDevice.pair(udid: udid) { return true }
-        // Fallback
-        let result = await Shell.runAsync("idevicepair", arguments: ["-u", udid, "pair"])
-        return result.succeeded
+        lastError = nil
+
+        // Primary: pymobiledevice3 maps to Finder's "Show this iPhone when on Wi-Fi" toggle.
+        let result = await PyMobileDevice.setWiFiConnections(udid: udid, enabled: true)
+        if result.succeeded { return true }
+
+        // Pairing can surface the Trust flow, but it is not a substitute for enabling Wi-Fi.
+        if await PyMobileDevice.pair(udid: udid) {
+            let retry = await PyMobileDevice.setWiFiConnections(udid: udid, enabled: true)
+            if retry.succeeded { return true }
+            lastError = retry.stderr.nilIfEmpty ?? retry.output.nilIfEmpty
+            return false
+        }
+
+        lastError = result.stderr.nilIfEmpty
+            ?? result.output.nilIfEmpty
+            ?? "Connect the device over USB, unlock it, tap Trust, then try enabling Wi-Fi again."
+        return false
     }
 
     /// Scan for devices available over the network.

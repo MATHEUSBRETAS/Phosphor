@@ -63,6 +63,62 @@ def test_mobdev2_wireless_discovery_is_a_non_backup_hint(root: Path) -> None:
     assert_contains(backup, "preferNetwork: preferNetwork", "BackupManager should thread Wi-Fi preference into pymobiledevice3 backup")
 
 
+def test_finder_wifi_sync_can_be_enabled_from_usb_device(root: Path) -> None:
+    py = read(root, "Sources/Phosphor/Utilities/PyMobileDevice.swift")
+    assert_contains(py, '"lockdown", "wifi-connections", "--state"', "Phosphor should call pymobiledevice3's Finder-style Wi-Fi toggle")
+    assert_contains(py, 'enabled ? "on" : "off"', "Wi-Fi connection toggle should support the on state explicitly")
+    assert_contains(py, "run while the device is reachable over USB/lockdown", "Wi-Fi enablement should be documented as USB/lockdown-only")
+    assert_contains(py, "normalizeLockdownResult", "pymobiledevice3 lockdown commands can emit ERROR on stderr with exit code 0 and must be normalized")
+    assert_contains(py, '"device not found"', "Wi-Fi enablement must not falsely succeed when pymobiledevice3 reports Device not found")
+
+    manager = read(root, "Sources/Phosphor/Services/DeviceManager.swift")
+    assert_contains(manager, "func enableWiFiConnections(udid", "DeviceManager should expose Wi-Fi connection enablement")
+    assert_contains(manager, "setWiFiConnections(udid: udid, enabled: true)", "DeviceManager should run the actual lockdown Wi-Fi toggle")
+    assert_contains(manager, "pairing alone\n        // is not enough", "Pairing must not be treated as successful Wi-Fi enablement")
+    assert_contains(manager, "networkDeviceCache = nil", "Successful Wi-Fi enablement should invalidate network discovery cache")
+
+    wifi = read(root, "Sources/Phosphor/Services/WiFiConnectionManager.swift")
+    assert_contains(wifi, "setWiFiConnections(udid: udid, enabled: true)", "WiFiConnectionManager should use the Finder-style toggle")
+    assert_not_contains(wifi, "if await PyMobileDevice.pair(udid: udid) { return true }", "Pairing alone should not report Wi-Fi sync enabled")
+
+    vm = read(root, "Sources/Phosphor/ViewModels/DeviceViewModel.swift")
+    assert_contains(vm, "guard device.connectionType == .usb", "UI flow should only enable Wi-Fi from a USB-connected device")
+    assert_contains(vm, "Wi-Fi connection enabled. Unplug the cable", "Success copy should tell the user to unplug and rescan")
+
+    view = read(root, "Sources/Phosphor/Views/Device/DeviceOverviewView.swift")
+    assert_contains(view, "Enable Wi-Fi", "Device overview should surface a Wi-Fi enable action")
+    assert_contains(view, "Show this iPhone when on Wi-Fi", "UI copy should tie the action to Finder's setting")
+    assert_contains(view, "@EnvironmentObject var backupVM", "Device overview should be able to start backups directly")
+    assert_contains(view, "Start a backup for this device", "Device overview should surface a backup action")
+    assert_contains(view, "Full Wi-Fi Backup?", "Device overview Wi-Fi full backups should use the same safety confirmation pattern")
+    assert_contains(view, "BackupManager.hasExistingBackup(for: device.id) && backupVM.backups.contains", "Device overview should only run incremental Wi-Fi backups when complete metadata exists")
+    assert_contains(view, "ProgressView(value: backupVM.displayProgressFraction", "Device overview backup progress should use a linear loading bar")
+    assert_contains(view, "backupVM.displayProgressText", "Device overview should show sanitized backup progress copy")
+
+
+def test_backup_progress_ui_uses_sanitized_loading_bar(root: Path) -> None:
+    backup_vm = read(root, "Sources/Phosphor/ViewModels/BackupViewModel.swift")
+    backup_view = read(root, "Sources/Phosphor/Views/Backup/BackupListView.swift")
+    manager = read(root, "Sources/Phosphor/Services/BackupManager.swift")
+    assert_contains(backup_vm, "var displayProgressText", "BackupViewModel should expose user-facing progress copy")
+    assert_contains(backup_vm, "return \"Backing up", "Backup progress copy should say Backing up, not the backend/protocol name")
+    assert_contains(backup_vm, "var displayProgressFraction", "BackupViewModel should expose progress for a loading bar")
+    assert_contains(backup_view, "ProgressView(value: backupVM.displayProgressFraction", "Backup list should show a linear loading bar while backing up")
+    assert_contains(backup_view, "backupVM.displayProgressText", "Backup list should not show raw backend/protocol progress text")
+    assert_contains(manager, "onProgress(\"Backing up", "pymobiledevice3 stderr percentage updates should reach the user-facing progress bar")
+
+
+def test_current_iphone_model_identifiers_are_mapped(root: Path) -> None:
+    device = read(root, "Sources/Phosphor/Models/DeviceInfo.swift")
+    parser = read(root, "Sources/Phosphor/Utilities/PlistParser.swift")
+    for src_name, src in (("DeviceInfo", device), ("PlistParser", parser)):
+        assert_contains(src, '"iPhone18,1": "iPhone 17 Pro"', f"{src_name} should map iPhone18,1 correctly")
+        assert_contains(src, '"iPhone18,2": "iPhone 17 Pro Max"', f"{src_name} should map iPhone18,2 correctly")
+        assert_contains(src, '"iPhone18,3": "iPhone 17"', f"{src_name} should map iPhone18,3 correctly")
+        assert_contains(src, '"iPhone18,4": "iPhone Air"', f"{src_name} should map iPhone18,4 correctly")
+        assert_contains(src, '"iPhone18,5": "iPhone 17e"', f"{src_name} should map iPhone18,5 correctly")
+
+
 def test_device_entry_merge_prefers_usb_without_dropping_network_only(root: Path) -> None:
     src = read(root, "Sources/Phosphor/Utilities/PyMobileDevice.swift")
     merge = re.search(r"private static func mergeDeviceEntries\(_ entries: \[DeviceEntry\]\).*?\n    \}", src, re.S)

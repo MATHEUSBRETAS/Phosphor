@@ -367,14 +367,17 @@ struct BackupListView: View {
     }
 
     private var backupProgressView: some View {
-        HStack(spacing: 12) {
-            ProgressView()
-                .scaleEffect(0.8)
-            Text(backupVM.progressText)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer()
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(backupVM.displayProgressText)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+            }
+            ProgressView(value: backupVM.displayProgressFraction, total: 1.0)
+                .progressViewStyle(.linear)
+                .tint(.indigo)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)

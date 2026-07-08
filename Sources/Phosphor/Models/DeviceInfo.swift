@@ -114,11 +114,12 @@ struct DeviceInfo: Identifiable, Hashable {
             "iPhone17,3": "iPhone 16",
             "iPhone17,4": "iPhone 16 Plus",
             "iPhone17,5": "iPhone 16e",
-            // iPhone 17 series (anticipated)
-            "iPhone18,1": "iPhone 17",
-            "iPhone18,2": "iPhone 17 Air",
-            "iPhone18,3": "iPhone 17 Pro",
-            "iPhone18,4": "iPhone 17 Pro Max",
+            // iPhone 17 series
+            "iPhone18,1": "iPhone 17 Pro",
+            "iPhone18,2": "iPhone 17 Pro Max",
+            "iPhone18,3": "iPhone 17",
+            "iPhone18,4": "iPhone Air",
+            "iPhone18,5": "iPhone 17e",
             // iPad Pro M4
             "iPad16,3": "iPad Pro M4 11\"",
             "iPad16,4": "iPad Pro M4 11\"",

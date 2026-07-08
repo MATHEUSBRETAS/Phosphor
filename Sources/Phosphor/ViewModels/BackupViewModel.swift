@@ -9,6 +9,7 @@ final class BackupViewModel: ObservableObject {
     @Published var selectedBackup: BackupInfo?
     @Published var isCreating = false
     @Published var progressText = ""
+    @Published var progressFraction: Double?
     @Published var showAlert = false
     @Published var alertMessage = ""
     @Published var backupIssue: BackupManager.BackupFailure?
@@ -101,15 +102,16 @@ final class BackupViewModel: ObservableObject {
         lastBackupRequest = BackupRequest(udid: udid, incremental: incremental, preferNetwork: preferNetwork)
         isCreating = true
         progressText = "Preparing..."
+        progressFraction = nil
 
         let success: Bool
         if incremental {
             success = await backupManager.createIncrementalBackup(udid: udid, preferNetwork: preferNetwork) { [weak self] text in
-                self?.progressText = text
+                self?.updateBackupProgress(text)
             }
         } else {
             success = await backupManager.createBackup(udid: udid, preferNetwork: preferNetwork) { [weak self] text in
-                self?.progressText = text
+                self?.updateBackupProgress(text)
             }
         }
 
@@ -128,6 +130,25 @@ final class BackupViewModel: ObservableObject {
 
     private func recoveryUdid(for issue: BackupManager.BackupFailure) -> String? {
         issue.udid ?? lastBackupRequest?.udid
+    }
+
+    var displayProgressText: String {
+        guard let progressFraction else { return "Backing up" }
+        return "Backing up \(Int(progressFraction * 100))%"
+    }
+
+    var displayProgressFraction: Double {
+        guard let progressFraction else { return 0.05 }
+        return min(max(progressFraction, 0.05), 1.0)
+    }
+
+    private func updateBackupProgress(_ text: String) {
+        progressText = text
+        if let pct = PyMobileDevice.parseProgress(from: text) {
+            progressFraction = pct
+        } else {
+            progressFraction = backupManager.backupPercent > 0 ? backupManager.backupPercent : progressFraction
+        }
     }
 
     private func recoveryPrefersNetwork(for udid: String) -> Bool {
