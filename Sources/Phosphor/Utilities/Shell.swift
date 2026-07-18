@@ -206,7 +206,11 @@ enum Shell {
     }
 
     /// Run a command asynchronously.
-    static func runAsync(_ command: String, arguments: [String] = [], timeout: TimeInterval = 300) async -> Result {
+    ///
+    /// `extraEnvironment` is merged over the inherited environment. Use it to pass
+    /// secrets (for example `BACKUP_PASSWORD`) that must not appear in the process
+    /// argument list, where any local process could read them via `ps`.
+    static func runAsync(_ command: String, arguments: [String] = [], timeout: TimeInterval = 300, extraEnvironment: [String: String] = [:]) async -> Result {
         await withCheckedContinuation { continuation in
             let process = Process()
             let stdoutPipe = Pipe()
@@ -217,7 +221,9 @@ enum Shell {
             process.arguments = [command] + arguments
             process.standardOutput = stdoutPipe
             process.standardError = stderrPipe
-            process.environment = environmentWithToolPaths()
+            var environment = environmentWithToolPaths()
+            for (key, value) in extraEnvironment { environment[key] = value }
+            process.environment = environment
 
             @Sendable func finish(timedOut: Bool) {
                 stdoutPipe.fileHandleForReading.readabilityHandler = nil

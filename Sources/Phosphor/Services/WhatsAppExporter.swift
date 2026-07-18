@@ -301,7 +301,7 @@ final class WhatsAppExporter {
         var html = """
         <!DOCTYPE html>
         <html lang="en"><head><meta charset="UTF-8">
-        <title>\(title) - WhatsApp Export</title>
+        <title>\(title.htmlEscaped) - WhatsApp Export</title>
         <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, system-ui, sans-serif; background: #ECE5DD; padding: 20px; max-width: 680px; margin: 0 auto; }
@@ -316,20 +316,18 @@ final class WhatsAppExporter {
         .sender { font-size: 11px; color: #075E54; font-weight: 600; margin-bottom: 2px; }
         .media { color: #999; font-style: italic; }
         </style></head><body>
-        <h1>\(title)</h1><div class="chat">
+        <h1>\(title.htmlEscaped)</h1><div class="chat">
         """
 
         for msg in messages {
             let cls = msg.isFromMe ? "me" : ""
             let bubble = msg.isFromMe ? "from-me" : "from-them"
-            let text = (msg.displayText)
-                .replacingOccurrences(of: "&", with: "&amp;")
-                .replacingOccurrences(of: "<", with: "&lt;")
+            let text = msg.displayText.htmlEscaped
                 .replacingOccurrences(of: "\n", with: "<br>")
 
             html += "<div class=\"row \(cls)\"><div class=\"msg \(bubble)\">"
             if !msg.isFromMe, let sender = msg.senderJid {
-                html += "<div class=\"sender\">\(sender)</div>"
+                html += "<div class=\"sender\">\(sender.htmlEscaped)</div>"
             }
             if msg.mediaType != 0 {
                 html += "<span class=\"media\">\(text)</span>"

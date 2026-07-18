@@ -992,16 +992,44 @@ final class BackupManager: ObservableObject {
     // MARK: - Encryption
 
     func enableEncryption(udid: String, password: String) async -> Bool {
-        if await PyMobileDevice.setEncryption(enabled: true, password: password, udid: udid) { return true }
-        return (await Shell.runAsync("idevicebackup2", arguments: ["-u", udid, "encryption", "on", password])).succeeded
+        await setBackupEncryption(udid: udid, enabled: true, password: password)
     }
 
     func disableEncryption(udid: String, password: String) async -> Bool {
-        if await PyMobileDevice.setEncryption(enabled: false, password: password, udid: udid) { return true }
-        return (await Shell.runAsync("idevicebackup2", arguments: ["-u", udid, "encryption", "off", password])).succeeded
+        await setBackupEncryption(udid: udid, enabled: false, password: password)
     }
 
+    /// Toggle backup encryption without leaking the password through the process
+    /// argument list. idevicebackup2 reads the password from the BACKUP_PASSWORD
+    /// environment variable, which - unlike an argv value - is not printed by
+    /// `ps -axww` (issue #39), so it is preferred whenever it works. pymobiledevice3
+    /// only accepts the password as a positional CLI argument, so it is used only
+    /// as a fallback and briefly exposes the secret to other local processes.
+    private func setBackupEncryption(udid: String, enabled: Bool, password: String) async -> Bool {
+        let mode = enabled ? "on" : "off"
+        let result = await Shell.runAsync(
+            "idevicebackup2",
+            arguments: ["-u", udid, "encryption", mode],
+            extraEnvironment: ["BACKUP_PASSWORD": password]
+        )
+        if result.succeeded { return true }
+        return await PyMobileDevice.setEncryption(enabled: enabled, password: password, udid: udid)
+    }
+
+    /// Change the backup password. Passwords are passed to idevicebackup2 via the
+    /// BACKUP_PASSWORD / BACKUP_PASSWORD_NEW environment variables so they never
+    /// appear in the argument list (issue #39); the pymobiledevice3 argv path is a
+    /// fallback used only when idevicebackup2 is unavailable.
     func changeEncryptionPassword(udid: String, oldPassword: String, newPassword: String) async -> Bool {
+        let result = await Shell.runAsync(
+            "idevicebackup2",
+            arguments: ["-u", udid, "changepw"],
+            extraEnvironment: [
+                "BACKUP_PASSWORD": oldPassword,
+                "BACKUP_PASSWORD_NEW": newPassword,
+            ]
+        )
+        if result.succeeded { return true }
         return await PyMobileDevice.changeEncryptionPassword(oldPassword: oldPassword, newPassword: newPassword, udid: udid)
     }
 

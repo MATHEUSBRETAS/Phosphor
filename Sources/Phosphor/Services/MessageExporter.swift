@@ -1017,12 +1017,7 @@ final class MessageExporter {
     }
 
     private func htmlEscape(_ raw: String) -> String {
-        raw
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "'", with: "&#39;")
+        raw.htmlEscaped
     }
 
     private func exportJSON(messages: [Message], chatTitle: String, to path: String, cancellationCheck: (() throws -> Void)? = nil) throws {

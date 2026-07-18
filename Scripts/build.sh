@@ -20,10 +20,20 @@ if [ -x "$PROJECT_DIR/Scripts/regression/run.py" ]; then
     "$PROJECT_DIR/Scripts/regression/run.py"
 fi
 
-# Build release binary
-swift build -c release 2>&1
+# Build release binary. Set PHOSPHOR_UNIVERSAL=1 to produce a universal
+# arm64 + x86_64 binary so the app also runs on Intel Macs (issue #44). The
+# default host-arch build stays fast for local/CI compile checks.
+ARCH_FLAGS=""
+if [ "${PHOSPHOR_UNIVERSAL:-0}" = "1" ]; then
+    ARCH_FLAGS="--arch arm64 --arch x86_64"
+    echo "==> Universal build (arm64 + x86_64)"
+fi
 
-BINARY_PATH=$(swift build -c release --show-bin-path)/${APP_NAME}
+# shellcheck disable=SC2086
+swift build -c release $ARCH_FLAGS 2>&1
+
+# shellcheck disable=SC2086
+BINARY_PATH=$(swift build -c release $ARCH_FLAGS --show-bin-path)/${APP_NAME}
 
 if [ ! -f "$BINARY_PATH" ]; then
     echo "ERROR: Binary not found at $BINARY_PATH"

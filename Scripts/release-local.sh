@@ -23,13 +23,24 @@ APP=".build/Phosphor.app"
 DMG=".build/Phosphor.dmg"
 ENTITLEMENTS="Resources/Phosphor.entitlements"
 
-echo "==> Building release"
+echo "==> Building release (universal arm64 + x86_64)"
 rm -rf .build
-swift build -c release
+# Ship a universal binary so the app runs on both Apple Silicon and Intel Macs
+# (issue #44). Scripts/build.sh honors PHOSPHOR_UNIVERSAL for the bundled binary.
+export PHOSPHOR_UNIVERSAL=1
+swift build -c release --arch arm64 --arch x86_64
 bash Scripts/build.sh
 
+echo "==> Verifying universal binary slices"
+BINARY="$APP/Contents/MacOS/Phosphor"
+if ! lipo -archs "$BINARY" | grep -q "x86_64" || ! lipo -archs "$BINARY" | grep -q "arm64"; then
+    echo "ERROR: $BINARY is not universal (arch: $(lipo -archs "$BINARY")). Aborting release."
+    exit 1
+fi
+echo "    slices: $(lipo -archs "$BINARY")"
+
 echo "==> Signing app"
-codesign --force --deep --options runtime \
+codesign --force --options runtime \
     --entitlements "$ENTITLEMENTS" \
     --timestamp \
     --sign "$DEVELOPER_ID" "$APP"
