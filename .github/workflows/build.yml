@@ -80,8 +80,16 @@ jobs:
 
       - name: Build Release
         run: |
-          swift build -c release
+          # Universal arm64 + x86_64 so the released app runs on Intel Macs (issue #44).
+          export PHOSPHOR_UNIVERSAL=1
+          swift build -c release --arch arm64 --arch x86_64
           bash Scripts/build.sh
+          BINARY=".build/Phosphor.app/Contents/MacOS/Phosphor"
+          if ! lipo -archs "$BINARY" | grep -q x86_64 || ! lipo -archs "$BINARY" | grep -q arm64; then
+            echo "::error::Release binary is not universal (arch: $(lipo -archs "$BINARY"))"
+            exit 1
+          fi
+          echo "Universal slices: $(lipo -archs "$BINARY")"
 
       - name: Import Developer ID certificate
         run: |
@@ -116,7 +124,7 @@ jobs:
           ENTITLEMENTS="Resources/Phosphor.entitlements"
 
           echo "== Codesign app =="
-          codesign --force --deep --options runtime \
+          codesign --force --options runtime \
             --entitlements "$ENTITLEMENTS" \
             --timestamp \
             --sign "$DEVELOPER_ID" \

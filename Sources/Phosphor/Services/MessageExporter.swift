@@ -525,7 +525,7 @@ final class MessageExporter {
         case .txt:
             try exportPlainText(messages: messages, chatTitle: chatTitle, to: path, cancellationCheck: cancellationCheck)
         case .pdf:
-            try exportPDF(messages: messages, chatTitle: chatTitle, to: path, includeAttachments: options.includeAttachments)
+            try exportPDF(messages: messages, chatTitle: chatTitle, to: path, includeAttachments: options.includeAttachments, cancellationCheck: cancellationCheck)
         case .html:
             try exportHTML(messages: messages, chatTitle: chatTitle, to: path, includeAttachments: options.includeAttachments, cancellationCheck: cancellationCheck)
         case .json:

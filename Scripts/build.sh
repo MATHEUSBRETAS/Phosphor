@@ -64,7 +64,10 @@ fi
 cp "$PROJECT_DIR/Resources/Phosphor.entitlements" "$APP_BUNDLE/Contents/Resources/"
 
 # Copy SPM resource bundle (localization strings)
-RESOURCE_BUNDLE="$BINARY_PATH/../Phosphor_Phosphor.bundle"
+# dirname, not "$BINARY_PATH/..": the latter traverses '..' through the binary
+# file itself (ENOTDIR), so the -d test always failed and the localization
+# bundle was silently never copied into the app.
+RESOURCE_BUNDLE="$(dirname "$BINARY_PATH")/Phosphor_Phosphor.bundle"
 if [ -d "$RESOURCE_BUNDLE" ]; then
     cp -R "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
     echo "==> Copied localization resource bundle"

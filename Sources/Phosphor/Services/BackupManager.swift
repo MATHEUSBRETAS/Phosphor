@@ -567,7 +567,7 @@ final class BackupManager: ObservableObject {
                 completion: { [weak self] exitCode in
                     Task { @MainActor in
                         guard let self else {
-                            continuation.resume(returning: exitCode == 0)
+                            continuation.resume(returning: false)
                             return
                         }
                         if self.operationWasCancelled(operationID) {
@@ -673,7 +673,7 @@ final class BackupManager: ObservableObject {
                 completion: { [weak self] exitCode in
                     Task { @MainActor in
                         guard let self else {
-                            continuation.resume(returning: exitCode == 0)
+                            continuation.resume(returning: false)
                             return
                         }
                         if self.activeOperationID == operationID {
@@ -794,7 +794,7 @@ final class BackupManager: ObservableObject {
                 completion: { [weak self] exitCode in
                     Task { @MainActor in
                         guard let self else {
-                            continuation.resume(returning: exitCode == 0)
+                            continuation.resume(returning: false)
                             return
                         }
                         if self.operationWasCancelled(operationID) {
@@ -1002,9 +1002,10 @@ final class BackupManager: ObservableObject {
     /// Toggle backup encryption without leaking the password through the process
     /// argument list. idevicebackup2 reads the password from the BACKUP_PASSWORD
     /// environment variable, which - unlike an argv value - is not printed by
-    /// `ps -axww` (issue #39), so it is preferred whenever it works. pymobiledevice3
-    /// only accepts the password as a positional CLI argument, so it is used only
-    /// as a fallback and briefly exposes the secret to other local processes.
+    /// `ps -axww` (issue #39), so it is tried first. pymobiledevice3 only accepts
+    /// the password as a positional CLI argument, so the fallback below runs when
+    /// the idevicebackup2 attempt fails for any reason and briefly exposes the
+    /// secret to other local processes; the common success path never does.
     private func setBackupEncryption(udid: String, enabled: Bool, password: String) async -> Bool {
         let mode = enabled ? "on" : "off"
         let result = await Shell.runAsync(
@@ -1018,8 +1019,8 @@ final class BackupManager: ObservableObject {
 
     /// Change the backup password. Passwords are passed to idevicebackup2 via the
     /// BACKUP_PASSWORD / BACKUP_PASSWORD_NEW environment variables so they never
-    /// appear in the argument list (issue #39); the pymobiledevice3 argv path is a
-    /// fallback used only when idevicebackup2 is unavailable.
+    /// appear in the argument list (issue #39); the pymobiledevice3 argv path runs
+    /// only if that attempt fails and briefly exposes the secret via argv.
     func changeEncryptionPassword(udid: String, oldPassword: String, newPassword: String) async -> Bool {
         let result = await Shell.runAsync(
             "idevicebackup2",
