@@ -52,7 +52,9 @@ struct FileBrowserView: View {
     // MARK: - Header
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "doc.on.doc.fill", color: .cyan, size: 40, iconSize: 18)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("File System")
                     .font(.title2.weight(.semibold))
@@ -188,7 +190,7 @@ struct FileBrowserView: View {
                         .foregroundStyle(.white.opacity(0.7))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.indigo.opacity(0.85))
+                .background(Color.brandAccent.opacity(0.85))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(4)
             }
@@ -202,7 +204,7 @@ struct FileBrowserView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Capsule().fill(Color.indigo))
+                        .background(Capsule().fill(Color.brandAccent))
                         .padding(.bottom, 16)
                 }
             }

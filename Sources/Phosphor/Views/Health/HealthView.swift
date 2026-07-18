@@ -38,7 +38,9 @@ struct HealthView: View {
     }
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "heart.fill", color: Color(red: 1.0, green: 0.18, blue: 0.33), size: 40, iconSize: 19)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Health")
                     .font(.title2.weight(.semibold))
@@ -58,7 +60,7 @@ struct HealthView: View {
 
             Button("Export All...") { exportAll() }
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(.brandAccent)
         }
         .padding(20)
     }

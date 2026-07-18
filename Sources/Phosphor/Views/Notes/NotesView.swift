@@ -26,7 +26,8 @@ struct NotesView: View {
 
     private var noteListPane: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 10) {
+                GradientIconTile(systemName: "note.text", color: Color(red: 1.0, green: 0.8, blue: 0.0), size: 28, iconSize: 14, cornerRadius: 8)
                 Text("Notes")
                     .font(.headline)
                 Spacer()
@@ -97,7 +98,7 @@ struct NotesView: View {
                 .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
-                .background(isSelected ? Color.indigo.opacity(0.2) : Color(.controlBackgroundColor))
+                .background(isSelected ? Color.brandAccent.opacity(0.15) : Color(.controlBackgroundColor))
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -245,7 +246,7 @@ struct NoteHTMLView: NSViewRepresentable {
         <html><head><style>
         body { font-family: -apple-system, system-ui; font-size: 14px; padding: 16px;
                color: #f5f5f7; background: transparent; line-height: 1.6; }
-        a { color: #5856D6; }
+        a { color: #0A84FF; }
         @media (prefers-color-scheme: light) { body { color: #1d1d1f; } }
         </style></head><body>\(html)</body></html>
         """

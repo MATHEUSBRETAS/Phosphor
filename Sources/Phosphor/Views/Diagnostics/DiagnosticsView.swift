@@ -53,7 +53,9 @@ struct DiagnosticsView: View {
     // MARK: - Header
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "waveform.path.ecg", color: .mint, size: 40, iconSize: 19)
+
             Text("Diagnostics")
                 .font(.title2.weight(.semibold))
 
@@ -94,6 +96,7 @@ struct DiagnosticsView: View {
             }
             .padding(24)
         }
+        .background(Color.groupedBackground)
     }
 
     private func batteryCard(_ battery: DiagnosticsManager.BatteryDiagnostics) -> some View {
@@ -102,17 +105,11 @@ struct DiagnosticsView: View {
 
             HStack(spacing: 32) {
                 // Large battery gauge
-                ZStack {
-                    Circle()
-                        .stroke(Color.gray.opacity(0.1), lineWidth: 10)
-                    Circle()
-                        .trim(from: 0, to: CGFloat(battery.currentCapacity) / 100)
-                        .stroke(
-                            batteryColor(battery),
-                            style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                        )
-                        .rotationEffect(.degrees(-90))
-
+                GaugeRing(
+                    progress: Double(battery.currentCapacity) / 100,
+                    color: batteryColor(battery),
+                    lineWidth: 10
+                ) {
                     VStack(spacing: 2) {
                         if battery.isCharging {
                             Image(systemName: "bolt.fill")
@@ -233,7 +230,7 @@ struct DiagnosticsView: View {
                     )
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(diagVM.isStreamingSyslog ? .red : .indigo)
+                .tint(diagVM.isStreamingSyslog ? .red : .brandAccent)
 
                 HStack {
                     Image(systemName: "line.3.horizontal.decrease")
@@ -369,7 +366,7 @@ struct DiagnosticsView: View {
                     Task { await diagVM.pullCrashReports(udid: udid) }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(.brandAccent)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 10)

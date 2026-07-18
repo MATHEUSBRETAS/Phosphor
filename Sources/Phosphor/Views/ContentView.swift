@@ -38,17 +38,18 @@ struct ContentView: View {
         }
     }
 
+    /// Warning-tinted card banner for the missing tunnel service.
     private var tunnelBanner: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "network.badge.shield.half.filled")
                 .foregroundStyle(.orange)
-                .font(.system(size: 14))
+                .font(.system(size: 16, weight: .medium))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Tunnel service not running")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12, weight: .semibold))
                 Text("Required for screen capture, location spoofing, and process list on iOS 17+")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
 
@@ -72,22 +73,32 @@ struct ContentView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(.orange)
                 .controlSize(.small)
 
                 Button {
                     tunnelRunning = true // dismiss banner
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.orange.opacity(0.1))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.orange.opacity(0.3), lineWidth: 0.5)
+        )
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.08))
+        .padding(.top, 12)
+        .padding(.bottom, 4)
     }
 
     private func checkTunnel() async {
@@ -168,7 +179,8 @@ struct ContentView: View {
         if let device = deviceVM.selectedDevice {
             HStack(spacing: 6) {
                 Image(systemName: device.sfSymbolName)
-                    .font(.system(size: 14))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.brandAccent)
                 Text(device.name)
                     .font(.system(size: 12, weight: .medium))
 
@@ -177,18 +189,15 @@ struct ContentView: View {
                 }
 
                 // Connection badge
-                Text(device.connectionType.rawValue)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(device.connectionType == .wifi ? Color.blue : Color.green)
-                    .clipShape(Capsule())
+                PillBadge(text: device.connectionType.rawValue, color: device.connectionType.color)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(.quaternary)
-            .clipShape(Capsule())
+            .background(Color.brandAccent.opacity(0.1), in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.brandAccent.opacity(0.2), lineWidth: 0.5)
+            )
         }
     }
 }
@@ -221,13 +230,24 @@ struct WelcomeView: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Image(systemName: "light.beacon.max")
-                .font(.system(size: 56))
-                .foregroundStyle(.indigo)
-                .symbolRenderingMode(.hierarchical)
-                .scaleEffect(isPulsing ? 1.05 : 1.0)
-                .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: isPulsing)
-                .onAppear { isPulsing = true }
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.brandAccent.opacity(0.2), Color.brandAccent.opacity(0.06)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 104, height: 104)
+                Image(systemName: "light.beacon.max")
+                    .font(.system(size: 46, weight: .light))
+                    .foregroundStyle(Color.brandAccent)
+                    .symbolRenderingMode(.hierarchical)
+            }
+            .scaleEffect(isPulsing ? 1.04 : 1.0)
+            .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: isPulsing)
+            .onAppear { isPulsing = true }
 
             Text("Phosphor")
                 .font(.largeTitle.weight(.bold))
@@ -246,14 +266,13 @@ struct WelcomeView: View {
                 Label("Run Readiness Check", systemImage: "checklist.checked")
             }
             .buttonStyle(.borderedProminent)
+            .tint(.brandAccent)
 
             VStack(alignment: .leading, spacing: 8) {
                 depRow("pymobiledevice3", installed: depStatus["pymobiledevice3"] ?? false)
                 depRow("libimobiledevice", installed: depStatus["ideviceinfo"] ?? false)
             }
-            .padding()
-            .background(.quaternary.opacity(0.5))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .elevatedCard()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
@@ -270,7 +289,7 @@ struct WelcomeView: View {
                 .font(.system(size: 13, design: .monospaced))
             Spacer()
             Text(installed ? "Ready" : "Not found")
-                .font(.system(size: 11))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundColor(installed ? .secondary : .orange)
         }
         .frame(width: 280)

@@ -121,7 +121,7 @@ struct SettingsView: View {
                     } else {
                         Button("Start") { TunnelService.start() }
                             .buttonStyle(.borderedProminent)
-                            .tint(.indigo)
+                            .tint(.brandAccent)
                             .controlSize(.small)
                     }
                 }
@@ -264,9 +264,20 @@ struct SettingsView: View {
         VStack(spacing: 16) {
             Spacer()
 
-            Image(systemName: "light.beacon.max")
-                .font(.system(size: 48))
-                .foregroundStyle(.indigo)
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.brandAccent.opacity(0.2), Color.brandAccent.opacity(0.06)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 88, height: 88)
+                Image(systemName: "light.beacon.max")
+                    .font(.system(size: 40, weight: .light))
+                    .foregroundStyle(Color.brandAccent)
+            }
 
             Text("Phosphor")
                 .font(.title.weight(.bold))

@@ -81,10 +81,10 @@ struct DeviceCloneView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "arrow.right.circle.fill")
                             .font(.system(size: 40))
-                            .foregroundStyle(.indigo)
+                            .foregroundStyle(Color.brandAccent)
                         Text("Clone")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.indigo)
+                            .foregroundStyle(Color.brandAccent)
                     }
 
                     deviceSelector(
@@ -104,7 +104,7 @@ struct DeviceCloneView: View {
                         .font(.system(size: 14, weight: .semibold))
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(.brandAccent)
                 .controlSize(.large)
                 .disabled(sourceUDID == nil || destinationUDID == nil)
 
@@ -223,7 +223,7 @@ struct DeviceCloneView: View {
                     .stroke(Color.gray.opacity(0.15), lineWidth: 8)
                 Circle()
                     .trim(from: 0, to: cloneService.overallProgress)
-                    .stroke(Color.indigo, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .stroke(Color.brandAccent, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(.easeInOut(duration: 0.3), value: cloneService.overallProgress)
 
@@ -260,7 +260,7 @@ struct DeviceCloneView: View {
         return VStack(spacing: 4) {
             ZStack {
                 Circle()
-                    .fill(isDone ? Color.green : isActive ? Color.indigo : Color.gray.opacity(0.2))
+                    .fill(isDone ? Color.green : isActive ? Color.brandAccent : Color.gray.opacity(0.2))
                     .frame(width: 28, height: 28)
                 if isDone {
                     Image(systemName: "checkmark")
@@ -309,7 +309,7 @@ struct DeviceCloneView: View {
                 cloneService.reset()
             }
             .buttonStyle(.borderedProminent)
-            .tint(.indigo)
+            .tint(.brandAccent)
 
             Spacer()
         }

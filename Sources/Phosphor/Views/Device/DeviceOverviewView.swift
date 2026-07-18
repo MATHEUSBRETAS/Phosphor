@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Main device overview - shows device info card, storage, battery, quick actions.
-/// Enhanced with connection badge, expanded info, copy-to-clipboard, activation state colors.
+/// Main device overview - hero card, storage, battery health, info grid, quick actions.
+/// iMazing-style layout with elevated cards on a grouped background.
 struct DeviceOverviewView: View {
 
     @EnvironmentObject var deviceVM: DeviceViewModel
@@ -18,7 +18,7 @@ struct DeviceOverviewView: View {
             if let device = deviceVM.selectedDevice {
                 ScrollView {
                     VStack(spacing: 20) {
-                        deviceCard(device)
+                        heroCard(device)
                         storageSection(device)
                         batterySection
                         infoSection(device)
@@ -26,6 +26,7 @@ struct DeviceOverviewView: View {
                     }
                     .padding(24)
                 }
+                .background(Color.groupedBackground)
                 .task(id: device.id) {
                     backupVM.loadBackups()
                     battery = await diagnostics.getBatteryDiagnostics(udid: device.id)
@@ -33,6 +34,7 @@ struct DeviceOverviewView: View {
                 }
             } else {
                 noDeviceView
+                    .background(Color.groupedBackground)
             }
         }
         .alert("Device", isPresented: $deviceVM.showPairAlert) {
@@ -72,9 +74,20 @@ struct DeviceOverviewView: View {
 
     private var noDeviceView: some View {
         VStack(spacing: 16) {
-            Image(systemName: deviceVM.nearbyWirelessDevices.isEmpty ? "iphone.and.arrow.forward" : "wifi")
-                .font(.system(size: 44))
-                .foregroundStyle(.quaternary)
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.brandAccent.opacity(0.18), Color.brandAccent.opacity(0.05)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 96, height: 96)
+                Image(systemName: deviceVM.nearbyWirelessDevices.isEmpty ? "iphone.and.arrow.forward" : "wifi")
+                    .font(.system(size: 40, weight: .light))
+                    .foregroundStyle(Color.brandAccent)
+            }
 
             Text(deviceVM.nearbyWirelessDevices.isEmpty ? "No Device Connected" : "Nearby, Not Backup-Ready")
                 .font(.title3.weight(.semibold))
@@ -97,7 +110,7 @@ struct DeviceOverviewView: View {
                     ForEach(deviceVM.nearbyWirelessDevices, id: \.id) { device in
                         HStack(spacing: 8) {
                             Image(systemName: "iphone.radiowaves.left.and.right")
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(Color.brandAccent)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(device.name)
                                     .font(.system(size: 13, weight: .medium))
@@ -110,10 +123,8 @@ struct DeviceOverviewView: View {
                         }
                     }
                 }
-                .padding(12)
                 .frame(maxWidth: 380, alignment: .leading)
-                .background(.regularMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .elevatedCard(padding: 12)
 
                 Text("Unlock the device, plug it in once, tap Trust, enable Finder Wi-Fi sync, then unplug and scan again.")
                     .font(.caption)
@@ -128,83 +139,69 @@ struct DeviceOverviewView: View {
                 Text("Scan for Devices")
             }
             .buttonStyle(.borderedProminent)
-            .tint(.indigo)
+            .tint(.brandAccent)
             .controlSize(.regular)
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Device Card
+    // MARK: - Hero Card
 
-    private func deviceCard(_ device: DeviceInfo) -> some View {
-        HStack(spacing: 20) {
-            VStack {
-                Image(systemName: device.sfSymbolName)
-                    .font(.system(size: 64))
-                    .foregroundStyle(.indigo)
-                    .symbolRenderingMode(.hierarchical)
-            }
-            .frame(width: 100)
+    private func heroCard(_ device: DeviceInfo) -> some View {
+        HStack(alignment: .center, spacing: 20) {
+            GradientIconTile(
+                systemName: device.sfSymbolName,
+                color: .brandAccent,
+                size: 88,
+                iconSize: 42,
+                cornerRadius: 20
+            )
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(device.name)
-                    .font(.title2.weight(.semibold))
+                    .font(.system(size: 26, weight: .bold))
+                    .lineLimit(1)
 
                 Text(device.displayModelName)
-                    .font(.subheadline)
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 12) {
-                    Label("iOS \(device.iosVersion)", systemImage: "gear")
-
-                    // Connection type badge
-                    HStack(spacing: 3) {
-                        Circle()
-                            .fill(device.connectionType == .wifi ? Color.blue : Color.green)
-                            .frame(width: 6, height: 6)
-                        Text(device.connectionType.rawValue)
-                            .font(.system(size: 11, weight: .medium))
-                    }
-
+                HStack(spacing: 8) {
+                    StatusChip(text: "iOS \(device.iosVersion)", color: .secondary, icon: "gear")
+                    StatusChip(
+                        text: device.connectionType.rawValue,
+                        color: device.connectionType.color,
+                        dot: true
+                    )
                     if device.isPaired {
-                        Label("Paired", systemImage: "checkmark.shield.fill")
-                            .foregroundStyle(.green)
+                        StatusChip(text: "Paired", color: .green, icon: "checkmark.shield.fill")
                     } else {
-                        Label("Not Paired", systemImage: "shield.slash")
-                            .foregroundStyle(.orange)
+                        StatusChip(text: "Not Paired", color: .orange, icon: "shield.slash.fill")
                     }
                 }
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
             }
 
-            Spacer()
+            Spacer(minLength: 12)
 
             if let level = device.batteryLevel {
-                VStack(spacing: 4) {
-                    ZStack {
-                        Circle()
-                            .stroke(Color.gray.opacity(0.15), lineWidth: 6)
-                        Circle()
-                            .trim(from: 0, to: CGFloat(level) / 100)
-                            .stroke(
-                                Color.batteryColor(level: level, charging: device.batteryCharging ?? false),
-                                style: StrokeStyle(lineWidth: 6, lineCap: .round)
-                            )
-                            .rotationEffect(.degrees(-90))
-
-                        VStack(spacing: 0) {
+                VStack(spacing: 6) {
+                    GaugeRing(
+                        progress: Double(level) / 100,
+                        color: Color.batteryColor(level: level, charging: device.batteryCharging ?? false),
+                        lineWidth: 7
+                    ) {
+                        VStack(spacing: 1) {
                             if device.batteryCharging == true {
                                 Image(systemName: "bolt.fill")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.green)
                             }
                             Text("\(level)%")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
                         }
                     }
-                    .frame(width: 72, height: 72)
+                    .frame(width: 84, height: 84)
 
                     Text("Battery")
                         .font(.system(size: 11))
@@ -212,9 +209,7 @@ struct DeviceOverviewView: View {
                 }
             }
         }
-        .padding(20)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .elevatedCard(padding: 20)
     }
 
     // MARK: - Storage
@@ -378,32 +373,34 @@ struct DeviceOverviewView: View {
             SectionHeader(title: "Quick Actions")
 
             HStack(spacing: 12) {
-                ActionButton(icon: "arrow.clockwise", label: "Restart") {
+                ActionButton(icon: "arrow.clockwise", label: "Restart", color: .orange) {
                     Task { let _ = await diagnostics.restartDevice(udid: device.id) }
                 }
-                ActionButton(icon: "moon.fill", label: "Sleep") {
+                ActionButton(icon: "moon.fill", label: "Sleep", color: .indigo) {
                     Task { let _ = await diagnostics.sleepDevice(udid: device.id) }
                 }
-                ActionButton(icon: "camera.fill", label: "Screenshot") {
+                ActionButton(icon: "camera.fill", label: "Screenshot", color: .purple) {
                     Task { await deviceVM.takeScreenshot() }
                 }
                 ActionButton(
                     icon: backupVM.isCreating ? "hourglass" : backupActionIcon(for: device),
-                    label: backupVM.isCreating ? "Backing Up..." : backupActionLabel(for: device)
+                    label: backupVM.isCreating ? "Backing Up..." : backupActionLabel(for: device),
+                    color: .brandAccent
                 ) {
                     startBackup(for: device)
                 }
                 .disabled(backupVM.isCreating)
                 .help("Start a backup for this device")
                 if !device.isPaired {
-                    ActionButton(icon: "link", label: "Pair") {
+                    ActionButton(icon: "link", label: "Pair", color: .green) {
                         Task { await deviceVM.pair() }
                     }
                 }
                 if device.connectionType == .usb {
                     ActionButton(
                         icon: deviceVM.isEnablingWiFiSync ? "hourglass" : "wifi",
-                        label: deviceVM.isEnablingWiFiSync ? "Enabling..." : "Enable Wi-Fi"
+                        label: deviceVM.isEnablingWiFiSync ? "Enabling..." : "Enable Wi-Fi",
+                        color: .blue
                     ) {
                         Task { await deviceVM.enableWiFiSync() }
                     }
@@ -420,7 +417,7 @@ struct DeviceOverviewView: View {
                         .lineLimit(1)
                     ProgressView(value: backupVM.displayProgressFraction, total: 1.0)
                         .progressViewStyle(.linear)
-                        .tint(.indigo)
+                        .tint(.brandAccent)
                 }
             }
 
@@ -502,21 +499,36 @@ struct DeviceOverviewView: View {
     }
 }
 
+/// Quick-action tile button: colored icon above a label on a subtle rounded tile.
 struct ActionButton: View {
     let icon: String
     let label: String
+    var color: Color = .brandAccent
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
+            VStack(spacing: 5) {
                 Image(systemName: icon)
-                    .font(.system(size: 20))
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(color)
+                    .frame(height: 22)
                 Text(label)
-                    .font(.system(size: 11))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
-            .frame(width: 72, height: 56)
+            .frame(width: 78, height: 62)
+            .background(
+                Color.primary.opacity(0.04),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5)
+            )
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
     }
 }

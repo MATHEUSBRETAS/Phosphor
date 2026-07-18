@@ -22,7 +22,9 @@ struct BackupListView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack {
+            HStack(spacing: 14) {
+                GradientIconTile(systemName: "externaldrive.fill", color: .blue, size: 40, iconSize: 19)
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Backups")
                         .font(.title2.weight(.semibold))
@@ -35,7 +37,7 @@ struct BackupListView: View {
 
                 newBackupMenu
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(.brandAccent)
                 .disabled(backupVM.isCreating)
 
                 Button {
@@ -377,11 +379,11 @@ struct BackupListView: View {
             }
             ProgressView(value: backupVM.displayProgressFraction, total: 1.0)
                 .progressViewStyle(.linear)
-                .tint(.indigo)
+                .tint(.brandAccent)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(Color.indigo.opacity(0.06))
+        .background(Color.brandAccent.opacity(0.06))
     }
 
     @ViewBuilder
@@ -502,14 +504,12 @@ struct BackupRow: View {
     var body: some View {
         HStack(spacing: 14) {
             // Device icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.indigo.opacity(0.1))
-                    .frame(width: 44, height: 44)
-                Image(systemName: backup.productType.hasPrefix("iPad") ? "ipad" : "iphone")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.indigo)
-            }
+            GradientIconTile(
+                systemName: backup.productType.hasPrefix("iPad") ? "ipad" : "iphone",
+                color: .blue,
+                size: 44,
+                iconSize: 20
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -524,13 +524,7 @@ struct BackupRow: View {
                     }
 
                     if backup.isFullBackup {
-                        Text("Full")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.indigo)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Color.indigo.opacity(0.1))
-                            .clipShape(Capsule())
+                        StatusChip(text: "Full", color: .brandAccent)
                     }
                 }
 

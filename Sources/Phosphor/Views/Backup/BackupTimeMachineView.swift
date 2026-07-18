@@ -138,7 +138,7 @@ struct BackupTimeMachineView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color.indigo.opacity(0.6))
+            .background(Color.brandAccent.opacity(0.6))
 
             // Card body
             VStack(alignment: .leading, spacing: 8) {
@@ -168,7 +168,7 @@ struct BackupTimeMachineView: View {
                             showRestoreConfirm = true
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(.indigo)
+                        .tint(.brandAccent)
                         .controlSize(.small)
 
                         Button("Browse") {
@@ -203,7 +203,7 @@ struct BackupTimeMachineView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .stroke(
-                    offset == 0 ? Color.indigo.opacity(0.8) : Color.white.opacity(0.1),
+                    offset == 0 ? Color.brandAccent.opacity(0.8) : Color.white.opacity(0.1),
                     lineWidth: offset == 0 ? 2 : 0.5
                 )
         )
@@ -231,7 +231,7 @@ struct BackupTimeMachineView: View {
                 ForEach(Array(backupVM.backups.enumerated()), id: \.offset) { index, backup in
                     VStack(spacing: 4) {
                         Circle()
-                            .fill(index == selectedIndex ? Color.indigo : Color.white.opacity(0.3))
+                            .fill(index == selectedIndex ? Color.brandAccent : Color.white.opacity(0.3))
                             .frame(width: index == selectedIndex ? 10 : 6, height: index == selectedIndex ? 10 : 6)
 
                         if index == selectedIndex || backupVM.backups.count <= 6 {
@@ -326,7 +326,7 @@ struct BackupTimeMachineView: View {
             VStack(spacing: 20) {
                 ProgressView()
                     .scaleEffect(1.5)
-                    .tint(.indigo)
+                    .tint(.brandAccent)
 
                 Text("Restoring Backup...")
                     .font(.title3.weight(.semibold))

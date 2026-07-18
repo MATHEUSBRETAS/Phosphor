@@ -34,7 +34,9 @@ struct MusicView: View {
     }
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "music.note.list", color: Color(red: 0.99, green: 0.24, blue: 0.35), size: 40, iconSize: 19)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Music & Ringtones")
                     .font(.title2.weight(.semibold))
@@ -55,7 +57,7 @@ struct MusicView: View {
             if !selectedTracks.isEmpty {
                 Button("Extract (\(selectedTracks.count))") { extractSelected() }
                     .buttonStyle(.borderedProminent)
-                    .tint(.indigo)
+                    .tint(.brandAccent)
             }
         }
         .padding(20)
@@ -102,7 +104,7 @@ struct MusicView: View {
                                     // Selection toggle
                                     Image(systemName: selectedTracks.contains(track.id) ? "checkmark.circle.fill" : "circle")
                                         .font(.system(size: 16))
-                                        .foregroundColor(selectedTracks.contains(track.id) ? .indigo : .gray)
+                                        .foregroundColor(selectedTracks.contains(track.id) ? Color.brandAccent : .gray)
                                         .onTapGesture {
                                             if selectedTracks.contains(track.id) {
                                                 selectedTracks.remove(track.id)
@@ -153,7 +155,7 @@ struct MusicView: View {
 
             Image(systemName: "arrow.up.doc")
                 .font(.system(size: 48))
-                .foregroundStyle(.indigo)
+                .foregroundStyle(Color(red: 0.99, green: 0.24, blue: 0.35))
 
             Text("Transfer Music to Device")
                 .font(.title3.weight(.semibold))
@@ -171,7 +173,7 @@ struct MusicView: View {
                     Label("Transfer Music", systemImage: "music.note")
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(.brandAccent)
                 .disabled(deviceVM.selectedDevice == nil)
 
                 Button {

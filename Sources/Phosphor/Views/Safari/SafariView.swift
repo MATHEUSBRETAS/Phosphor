@@ -37,7 +37,9 @@ struct SafariView: View {
     }
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "safari", color: .blue, size: 40, iconSize: 19)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Safari")
                     .font(.title2.weight(.semibold))

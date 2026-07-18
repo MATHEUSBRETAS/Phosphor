@@ -37,7 +37,9 @@ struct CalendarView: View {
     }
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "calendar", color: .red, size: 40, iconSize: 19)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Calendar")
                     .font(.title2.weight(.semibold))
@@ -61,7 +63,7 @@ struct CalendarView: View {
         List(calendars, selection: $selectedCalendar) { cal in
             HStack(spacing: 10) {
                 Circle()
-                    .fill(Color.indigo)
+                    .fill(Color.red)
                     .frame(width: 10, height: 10)
 
                 Text(cal.title)
@@ -100,7 +102,7 @@ struct CalendarView: View {
                                 Text(event.startDate.shortString)
                                 if !event.isAllDay {
                                     Text(event.durationString)
-                                        .foregroundStyle(.indigo)
+                                        .foregroundStyle(Color.brandAccent)
                                 } else {
                                     Text("All Day")
                                         .foregroundStyle(.orange)

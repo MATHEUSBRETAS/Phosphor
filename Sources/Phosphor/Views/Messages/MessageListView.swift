@@ -56,7 +56,8 @@ struct MessageListView: View {
     private var chatListPane: some View {
         VStack(spacing: 0) {
             // Header
-            HStack {
+            HStack(spacing: 10) {
+                GradientIconTile(systemName: "message.fill", color: .green, size: 28, iconSize: 14, cornerRadius: 8)
                 Text("Messages")
                     .font(.headline)
                 Spacer()
@@ -208,11 +209,11 @@ struct MessageListView: View {
         HStack(spacing: 10) {
             ZStack {
                 Circle()
-                    .fill(chat.isGroupChat ? Color.purple.opacity(0.15) : Color.blue.opacity(0.15))
+                    .fill(chat.isGroupChat ? Color.purple.opacity(0.15) : Color.brandAccent.opacity(0.15))
                     .frame(width: 36, height: 36)
                 Image(systemName: chat.isGroupChat ? "person.3.fill" : "person.fill")
                     .font(.system(size: 14))
-                    .foregroundStyle(chat.isGroupChat ? .purple : .blue)
+                    .foregroundStyle(chat.isGroupChat ? .purple : Color.brandAccent)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -566,7 +567,7 @@ struct MessageBubble: View {
                     bubbleContent
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(message.isFromMe ? Color.blue : Color(.controlBackgroundColor))
+                        .background(message.isFromMe ? Color.brandAccent : Color(.controlBackgroundColor))
                         .clipShape(RoundedRectangle(cornerRadius: 16))
 
                     if !message.reactions.isEmpty {
@@ -614,7 +615,7 @@ struct MessageBubble: View {
                     Text(link)
                         .font(.system(size: 12))
                         .underline()
-                        .foregroundStyle(message.isFromMe ? .white : .blue)
+                        .foregroundStyle(message.isFromMe ? .white : Color.brandAccent)
                 }
             }
 

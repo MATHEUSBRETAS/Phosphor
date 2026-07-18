@@ -34,6 +34,7 @@ struct BatteryView: View {
                     }
                     .padding(24)
                 }
+                .background(Color.groupedBackground)
             } else {
                 EmptyStateView(
                     icon: "battery.0percent",
@@ -54,7 +55,9 @@ struct BatteryView: View {
     // MARK: - Header
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "battery.100percent", color: .green, size: 40, iconSize: 19)
+
             Text("Battery Health")
                 .font(.title2.weight(.semibold))
             Spacer()
@@ -76,18 +79,11 @@ struct BatteryView: View {
     private func healthCard(_ b: DiagnosticsManager.BatteryDiagnostics) -> some View {
         HStack(spacing: 32) {
             // Animated health gauge
-            ZStack {
-                Circle()
-                    .stroke(Color.gray.opacity(0.1), lineWidth: 12)
-                Circle()
-                    .trim(from: 0, to: animatedHealth / 100)
-                    .stroke(
-                        healthColor(b),
-                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .animation(.easeOut(duration: 0.8), value: animatedHealth)
-
+            GaugeRing(
+                progress: animatedHealth / 100,
+                color: healthColor(b),
+                lineWidth: 12
+            ) {
                 VStack(spacing: 2) {
                     if b.isCharging {
                         Image(systemName: "bolt.fill")
@@ -107,6 +103,7 @@ struct BatteryView: View {
                 }
             }
             .frame(width: 140, height: 140)
+            .animation(.easeOut(duration: 0.8), value: animatedHealth)
 
             VStack(alignment: .leading, spacing: 10) {
                 if let cycles = b.cycleCount {
@@ -121,13 +118,13 @@ struct BatteryView: View {
                 }
 
                 HStack(spacing: 16) {
-                    statusPill(
-                        b.isCharging ? "Charging" : "On Battery",
-                        icon: b.isCharging ? "bolt.fill" : "battery.50percent",
-                        color: b.isCharging ? .green : .secondary
+                    StatusChip(
+                        text: b.isCharging ? "Charging" : "On Battery",
+                        color: b.isCharging ? .green : .secondary,
+                        icon: b.isCharging ? "bolt.fill" : "battery.50percent"
                     )
                     if b.externalConnected {
-                        statusPill("Power Connected", icon: "powerplug.fill", color: .green)
+                        StatusChip(text: "Power Connected", color: .green, icon: "powerplug.fill")
                     }
                 }
 
@@ -228,20 +225,6 @@ struct BatteryView: View {
     }
 
     // MARK: - Helpers
-
-    private func statusPill(_ text: String, icon: String, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 10))
-            Text(text)
-                .font(.system(size: 11, weight: .medium))
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(color.opacity(0.1))
-        .clipShape(Capsule())
-    }
 
     private func healthColor(_ b: DiagnosticsManager.BatteryDiagnostics) -> Color {
         if let health = b.healthPercent {

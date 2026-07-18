@@ -16,13 +16,12 @@ struct ReadinessCenterView: View {
                 if deviceVM.isCheckingReadiness {
                     HStack(spacing: 10) {
                         ProgressView()
+                            .tint(.brandAccent)
                         Text("Running readiness checks…")
                             .foregroundStyle(.secondary)
                     }
-                    .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary.opacity(0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .elevatedCard()
                 }
 
                 if let report = deviceVM.readinessReport {
@@ -60,6 +59,7 @@ struct ReadinessCenterView: View {
                             Label("Export Diagnostic Report", systemImage: "square.and.arrow.up")
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(.brandAccent)
                     }
 
                     SectionBlock(title: "Next Steps", systemImage: "arrow.right.circle.fill") {
@@ -77,6 +77,7 @@ struct ReadinessCenterView: View {
                         Label("Run Readiness Check", systemImage: "play.fill")
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(.brandAccent)
                 }
 
                 if let exportMessage {
@@ -94,6 +95,7 @@ struct ReadinessCenterView: View {
             .padding(28)
             .frame(maxWidth: 900, alignment: .leading)
         }
+        .background(Color.groupedBackground)
         .navigationTitle("Readiness Center")
         .task {
             if deviceVM.readinessReport == nil {
@@ -113,22 +115,22 @@ struct ReadinessCenterView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Readiness Center")
-                        .font(.largeTitle.weight(.bold))
-                    Text("One place to verify setup, device visibility, backup safety, and bug-report diagnostics before you move data.")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    Task { await deviceVM.refreshReadiness() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .disabled(deviceVM.isCheckingReadiness)
+        HStack(alignment: .center, spacing: 16) {
+            GradientIconTile(systemName: "checklist.checked", color: .brandAccent, size: 56, iconSize: 26, cornerRadius: 14)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Readiness Center")
+                    .font(.largeTitle.weight(.bold))
+                Text("One place to verify setup, device visibility, backup safety, and bug-report diagnostics before you move data.")
+                    .foregroundStyle(.secondary)
             }
+            Spacer()
+            Button {
+                Task { await deviceVM.refreshReadiness() }
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            .disabled(deviceVM.isCheckingReadiness)
         }
     }
 
@@ -145,9 +147,8 @@ struct ReadinessCenterView: View {
             }
             Spacer()
         }
-        .padding()
-        .background(.quaternary.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .elevatedCard()
     }
 
     private func readinessRows(_ items: [ReadinessItem]) -> some View {
@@ -216,14 +217,8 @@ private struct SectionBlock<Content: View>: View {
                 .font(.title3.weight(.semibold))
             content()
         }
-        .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(.quaternary, lineWidth: 1)
-        )
+        .elevatedCard()
     }
 }
 
@@ -240,13 +235,7 @@ private struct ReadinessRow: View {
                 HStack(spacing: 8) {
                     Text(item.title)
                         .font(.headline)
-                    Text(item.status.rawValue)
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(color.opacity(0.15))
-                        .foregroundStyle(color)
-                        .clipShape(Capsule())
+                    StatusChip(text: item.status.rawValue, color: color)
                 }
                 Text(item.detail)
                     .font(.subheadline)

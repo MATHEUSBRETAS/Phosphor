@@ -38,7 +38,9 @@ struct AppManagerView: View {
     // MARK: - Header
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "square.grid.2x2.fill", color: .indigo, size: 40, iconSize: 19)
+
             Text("Applications")
                 .font(.title2.weight(.semibold))
 
@@ -72,7 +74,7 @@ struct AppManagerView: View {
                     Label("Install IPA", systemImage: "plus")
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(.brandAccent)
                 .disabled(deviceVM.selectedDevice == nil)
             }
         }
@@ -112,11 +114,11 @@ struct AppManagerView: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(app.appType == .system ? Color.gray.opacity(0.1) : Color.indigo.opacity(0.1))
+                    .fill(app.appType == .system ? Color.gray.opacity(0.1) : Color.brandAccent.opacity(0.1))
                     .frame(width: 36, height: 36)
                 Image(systemName: app.appType == .system ? "gearshape.fill" : "app.fill")
                     .font(.system(size: 16))
-                    .foregroundStyle(app.appType == .system ? .gray : .indigo)
+                    .foregroundStyle(app.appType == .system ? .gray : Color.brandAccent)
             }
 
             VStack(alignment: .leading, spacing: 2) {

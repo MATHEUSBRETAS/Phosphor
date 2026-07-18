@@ -7,14 +7,14 @@ struct StorageBar: View {
     let total: UInt64
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             // Bar
             GeometryReader { geo in
-                HStack(spacing: 1) {
+                HStack(spacing: 1.5) {
                     ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                         let fraction = total > 0 ? CGFloat(segment.bytes) / CGFloat(total) : 0
                         let width = max(fraction * geo.size.width, fraction > 0 ? 2 : 0)
-                        RoundedRectangle(cornerRadius: 2)
+                        Rectangle()
                             .fill(segment.color)
                             .frame(width: width)
                     }
@@ -23,18 +23,18 @@ struct StorageBar: View {
                     let usedBytes = segments.reduce(UInt64(0)) { $0 + $1.bytes }
                     let freeBytes = total > usedBytes ? total - usedBytes : 0
                     let freeFraction = total > 0 ? CGFloat(freeBytes) / CGFloat(total) : 1
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.gray.opacity(0.15))
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.08))
                         .frame(width: max(freeFraction * geo.size.width, 2))
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
-            .frame(height: 14)
+            .frame(height: 18)
 
             // Legend
             FlowLayout(spacing: 12) {
                 ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         Circle()
                             .fill(segment.color)
                             .frame(width: 8, height: 8)
@@ -48,9 +48,9 @@ struct StorageBar: View {
 
                 let usedBytes = segments.reduce(UInt64(0)) { $0 + $1.bytes }
                 let freeBytes = total > usedBytes ? total - usedBytes : 0
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     Circle()
-                        .fill(Color.gray.opacity(0.3))
+                        .fill(Color.primary.opacity(0.15))
                         .frame(width: 8, height: 8)
                     Text("Available")
                         .font(.system(size: 11))

@@ -39,23 +39,14 @@ struct ScreenCaptureView: View {
     // MARK: - Header
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "camera.viewfinder", color: .purple, size: 40, iconSize: 19)
+
             Text("Screen Capture")
                 .font(.title2.weight(.semibold))
 
             if capture.isCapturing {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(.red)
-                        .frame(width: 8, height: 8)
-                    Text("Live")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.red)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(.red.opacity(0.1))
-                .clipShape(Capsule())
+                StatusChip(text: "Live", color: .red, dot: true)
             }
 
             Spacer()
@@ -157,7 +148,7 @@ struct ScreenCaptureView: View {
                     Label("Start Tunnel Service", systemImage: "play.circle.fill")
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(.brandAccent)
 
                 Divider().padding(.vertical, 4)
 
@@ -181,9 +172,8 @@ struct ScreenCaptureView: View {
                 .background(Color(.textBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             }
-            .padding()
-            .background(.quaternary.opacity(0.5))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .frame(maxWidth: 460, alignment: .leading)
+            .elevatedCard()
 
             Button {
                 capture.needsTunnel = false
@@ -202,61 +192,33 @@ struct ScreenCaptureView: View {
     // MARK: - Idle
 
     private var idleView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "camera.viewfinder")
-                .font(.system(size: 52))
-                .foregroundStyle(.quaternary)
-
-            Text("Screen Capture")
-                .font(.title3.weight(.semibold))
-
-            Text("Capture your device screen in real-time.\nRequires Developer Mode and tunnel service on iOS 17+.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-
-            Button {
+        EmptyStateView(
+            icon: "camera.viewfinder",
+            title: "Screen Capture",
+            subtitle: "Capture your device screen in real-time.\nRequires Developer Mode and tunnel service on iOS 17+.",
+            action: {
                 guard let udid = deviceVM.selectedDevice?.id else { return }
                 capture.startCapture(udid: udid)
-            } label: {
-                Label("Start Capture", systemImage: "play.fill")
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.indigo)
-            .controlSize(.large)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+            },
+            actionLabel: "Start Capture"
+        )
     }
 
     // MARK: - Error
 
     private func errorView(_ error: String) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 44))
-                .foregroundStyle(.orange)
-
-            Text("Capture Failed")
-                .font(.title3.weight(.semibold))
-
-            Text(error)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 400)
-
-            Button {
+        EmptyStateView(
+            icon: "exclamationmark.triangle.fill",
+            title: "Capture Failed",
+            subtitle: error,
+            action: {
                 capture.error = nil
                 guard let udid = deviceVM.selectedDevice?.id else { return }
                 capture.startCapture(udid: udid)
-            } label: {
-                Label("Try Again", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.indigo)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+            },
+            actionLabel: "Try Again",
+            color: .orange
+        )
     }
 
     private func saveScreenshot() {

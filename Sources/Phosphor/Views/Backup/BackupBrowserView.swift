@@ -48,7 +48,7 @@ struct BackupBrowserView: View {
                         Label("Extract (\(selectedFiles.count))", systemImage: "square.and.arrow.down")
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.indigo)
+                    .tint(.brandAccent)
                 }
             }
             .padding(20)
@@ -106,7 +106,7 @@ struct BackupBrowserView: View {
             HStack {
                 Image(systemName: iconForDomain(domain))
                     .font(.system(size: 16))
-                    .foregroundStyle(.indigo)
+                    .foregroundStyle(Color.brandAccent)
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 2) {

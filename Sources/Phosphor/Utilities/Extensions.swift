@@ -109,9 +109,7 @@ extension BackupInfo {
 struct CardStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding()
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .modifier(ElevatedCard())
     }
 }
 
@@ -124,7 +122,7 @@ extension View {
 // MARK: - Color Helpers
 
 extension Color {
-    static let phosphorAccent = Color.indigo
+    static let phosphorAccent = Color.brandAccent
     static let phosphorSecondary = Color.purple
     static let phosphorSuccess = Color.green
     static let phosphorWarning = Color.orange

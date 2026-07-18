@@ -46,23 +46,14 @@ struct LocationView: View {
     // MARK: - Header
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "location.fill", color: .blue, size: 40, iconSize: 18)
+
             Text("Location")
                 .font(.title2.weight(.semibold))
 
             if simulator.isPlayingRoute {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(.blue)
-                        .frame(width: 8, height: 8)
-                    Text("Route Playing")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.blue)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(.blue.opacity(0.1))
-                .clipShape(Capsule())
+                StatusChip(text: "Route Playing", color: .blue, dot: true)
             }
 
             Spacer()
@@ -171,7 +162,7 @@ struct LocationView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.indigo)
+            .tint(.brandAccent)
             .disabled(simulator.isApplying || !isValidCoordinate)
 
             Button {

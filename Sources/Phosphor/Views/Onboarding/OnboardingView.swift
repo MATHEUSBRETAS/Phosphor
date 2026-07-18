@@ -40,7 +40,7 @@ struct OnboardingView: View {
                 HStack(spacing: 6) {
                     ForEach(0..<pages, id: \.self) { i in
                         Circle()
-                            .fill(i == currentPage ? Color.indigo : Color.gray.opacity(0.3))
+                            .fill(i == currentPage ? Color.brandAccent : Color.gray.opacity(0.3))
                             .frame(width: 8, height: 8)
                             .scaleEffect(i == currentPage ? 1.2 : 1.0)
                             .animation(.easeInOut(duration: 0.2), value: currentPage)
@@ -54,13 +54,13 @@ struct OnboardingView: View {
                         withAnimation { currentPage += 1 }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.indigo)
+                    .tint(.brandAccent)
                 } else {
                     Button("Get Started") {
                         isPresented = false
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.indigo)
+                    .tint(.brandAccent)
                     .controlSize(.large)
                 }
             }
@@ -80,10 +80,21 @@ struct OnboardingView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            Image(systemName: "light.beacon.max")
-                .font(.system(size: 72))
-                .foregroundStyle(.indigo)
-                .symbolRenderingMode(.hierarchical)
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.brandAccent.opacity(0.22), Color.brandAccent.opacity(0.06)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 120, height: 120)
+                Image(systemName: "light.beacon.max")
+                    .font(.system(size: 56, weight: .light))
+                    .foregroundStyle(Color.brandAccent)
+                    .symbolRenderingMode(.hierarchical)
+            }
 
             Text("Welcome to Phosphor")
                 .font(.largeTitle.weight(.bold))
@@ -108,12 +119,12 @@ struct OnboardingView: View {
                 .font(.title.weight(.bold))
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                featureCard("externaldrive.fill", "Backups", "Full & incremental local backups with browsing")
-                featureCard("message.fill", "Messages", "Export iMessage, WhatsApp, Notes to CSV/HTML")
-                featureCard("photo.on.rectangle.angled", "Photos", "Extract Camera Roll without iCloud")
-                featureCard("battery.100percent", "Battery", "Health, cycle count, voltage, temperature")
-                featureCard("camera.viewfinder", "Screen", "Live screen capture and screenshot")
-                featureCard("location.fill", "Location", "GPS spoofing with map and GPX routes")
+                featureCard("externaldrive.fill", "Backups", "Full & incremental local backups with browsing", color: .blue)
+                featureCard("message.fill", "Messages", "Export iMessage, WhatsApp, Notes to CSV/HTML", color: .green)
+                featureCard("photo.on.rectangle.angled", "Photos", "Extract Camera Roll without iCloud", color: .orange)
+                featureCard("battery.100percent", "Battery", "Health, cycle count, voltage, temperature", color: .green)
+                featureCard("camera.viewfinder", "Screen", "Live screen capture and screenshot", color: .purple)
+                featureCard("location.fill", "Location", "GPS spoofing with map and GPX routes", color: .blue)
             }
             .padding(.horizontal, 32)
 
@@ -121,11 +132,11 @@ struct OnboardingView: View {
         }
     }
 
-    private func featureCard(_ icon: String, _ title: String, _ desc: String) -> some View {
+    private func featureCard(_ icon: String, _ title: String, _ desc: String, color: Color) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 22))
-                .foregroundStyle(.indigo)
+                .foregroundStyle(color)
                 .frame(width: 36)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -274,7 +285,7 @@ struct OnboardingView: View {
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .frame(width: 22, height: 22)
-                .background(Color.indigo)
+                .background(Color.brandAccent)
                 .clipShape(Circle())
             Text(text)
                 .font(.system(size: 13))

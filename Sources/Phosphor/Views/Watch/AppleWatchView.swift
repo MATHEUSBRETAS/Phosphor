@@ -44,7 +44,9 @@ struct AppleWatchView: View {
     }
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "applewatch", color: .gray, size: 40, iconSize: 19)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Apple Watch")
                     .font(.title2.weight(.semibold))
@@ -85,10 +87,8 @@ struct AppleWatchView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .elevatedCard(padding: 20)
                 }
 
                 if !activitySummaries.isEmpty {
@@ -120,25 +120,18 @@ struct AppleWatchView: View {
                             }
                         }
                     }
-                    .padding(20)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .elevatedCard(padding: 20)
                 }
             }
             .padding(24)
         }
+        .background(Color.groupedBackground)
     }
 
     private func watchCard(_ watch: AppleWatchExtractor.WatchInfo) -> some View {
         HStack(spacing: 20) {
-            VStack {
-                Image(systemName: "applewatch")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.indigo)
-                    .symbolRenderingMode(.hierarchical)
-            }
-            .frame(width: 80)
+            GradientIconTile(systemName: "applewatch", color: .gray, size: 64, iconSize: 30, cornerRadius: 16)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(watch.name)
@@ -168,9 +161,7 @@ struct AppleWatchView: View {
 
             Spacer()
         }
-        .padding(20)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .elevatedCard(padding: 20)
     }
 
     private func activityRing(value: Double, goal: Double, color: Color, label: String, unit: String) -> some View {
@@ -214,11 +205,11 @@ struct AppleWatchView: View {
                     HStack(spacing: 12) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.indigo.opacity(0.1))
+                                .fill(Color.gray.opacity(0.12))
                                 .frame(width: 36, height: 36)
                             Image(systemName: "applewatch.radiowaves.left.and.right")
                                 .font(.system(size: 16))
-                                .foregroundStyle(.indigo)
+                                .foregroundStyle(.gray)
                         }
 
                         VStack(alignment: .leading, spacing: 2) {

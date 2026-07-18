@@ -105,11 +105,14 @@ enum SidebarGroup: String, CaseIterable {
     }
 }
 
+/// iMazing-style sidebar: device entries on top, grouped sections below with
+/// distinctly colored icons, and a rounded accent-tinted selection highlight.
 struct SidebarView: View {
 
     @Binding var selection: SidebarSection?
     @EnvironmentObject var deviceVM: DeviceViewModel
     @EnvironmentObject var backupVM: BackupViewModel
+    @State private var hoveredSection: SidebarSection?
 
     var body: some View {
         List {
@@ -117,73 +120,16 @@ struct SidebarView: View {
                 sidebarRow(.readiness)
 
                 if deviceVM.devices.isEmpty {
-                    sidebarButton(.devices) {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("No device connected")
-                                    .font(.system(size: 13))
-                                Text("Connect via USB or Wi-Fi")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.tertiary)
-                            }
-                        } icon: {
-                            Image(systemName: "iphone.slash")
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
+                    noDeviceRow
                 } else {
                     ForEach(deviceVM.devices) { device in
-                        sidebarButton(.devices, onSelect: { deviceVM.selectDevice(device) }) {
-                            Label {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 6) {
-                                            Text(device.name)
-                                                .font(.system(size: 13, weight: .medium))
-                                            Text(device.connectionType.rawValue)
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .foregroundStyle(.white)
-                                                .padding(.horizontal, 5)
-                                                .padding(.vertical, 1)
-                                                .background(device.connectionType == .wifi ? Color.blue : Color.green)
-                                                .clipShape(Capsule())
-                                        }
-                                        Text("\(device.displayModelName) - iOS \(device.iosVersion)")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    if let level = device.batteryLevel {
-                                        HStack(spacing: 2) {
-                                            if device.batteryCharging == true {
-                                                Image(systemName: "bolt.fill")
-                                                    .font(.system(size: 8))
-                                                    .foregroundStyle(.green)
-                                            }
-                                            Text("\(level)%")
-                                                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                                .foregroundStyle(Color.batteryColor(level: level, charging: device.batteryCharging ?? false))
-                                        }
-                                    }
-                                }
-                            } icon: {
-                                ZStack(alignment: .bottomTrailing) {
-                                    Image(systemName: device.sfSymbolName)
-                                        .foregroundStyle(.indigo)
-                                        .font(.system(size: 16))
-                                    Circle()
-                                        .fill(device.connectionType == .wifi ? Color.blue : Color.green)
-                                        .frame(width: 6, height: 6)
-                                        .offset(x: 2, y: 2)
+                        deviceRow(device)
+                            .onAppear {
+                                // Auto-select first device
+                                if deviceVM.selectedDevice == nil {
+                                    deviceVM.selectDevice(device)
                                 }
                             }
-                        }
-                        .onAppear {
-                            // Auto-select first device
-                            if deviceVM.selectedDevice == nil {
-                                deviceVM.selectDevice(device)
-                            }
-                        }
                     }
                 }
             }
@@ -221,10 +167,93 @@ struct SidebarView: View {
         .listStyle(.sidebar)
     }
 
-    /// Standard sidebar row - tappable, with highlight for selected state.
+    // MARK: - Rows
+
+    /// Shown when no device is connected.
+    private var noDeviceRow: some View {
+        sidebarButton(.devices) {
+            HStack(spacing: 9) {
+                Image(systemName: "iphone.slash")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 22, alignment: .center)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No device connected")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                    Text("Connect via USB or Wi-Fi")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+            }
+        }
+    }
+
+    /// Device entry: glyph with connection dot, name + connection pill,
+    /// model/iOS subtitle, right-aligned battery percentage.
+    private func deviceRow(_ device: DeviceInfo) -> some View {
+        let isSelected = selection == .devices && deviceVM.selectedDevice?.id == device.id
+        return sidebarButton(.devices, onSelect: { deviceVM.selectDevice(device) }) {
+            HStack(spacing: 9) {
+                ZStack(alignment: .bottomTrailing) {
+                    Image(systemName: device.sfSymbolName)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(isSelected ? Color.brandAccent : Color.primary)
+                        .frame(width: 22, alignment: .center)
+                    Circle()
+                        .fill(device.connectionType.color)
+                        .frame(width: 6, height: 6)
+                        .overlay(Circle().stroke(Color(nsColor: .controlBackgroundColor), lineWidth: 1))
+                        .offset(x: 3, y: 3)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(device.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(isSelected ? Color.brandAccent : Color.primary)
+                            .lineLimit(1)
+                        PillBadge(text: device.connectionType.rawValue, color: device.connectionType.color)
+                    }
+                    Text("\(device.displayModelName) - iOS \(device.iosVersion)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                if let level = device.batteryLevel {
+                    HStack(spacing: 2) {
+                        if device.batteryCharging == true {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 8))
+                                .foregroundStyle(.green)
+                        }
+                        Text("\(level)%")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color.batteryColor(level: level, charging: device.batteryCharging ?? false))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Standard sidebar row - colored icon in a fixed-width frame, label, rounded selection.
     private func sidebarRow(_ section: SidebarSection) -> some View {
-        sidebarButton(section) {
-            Label(section.label, systemImage: section.icon)
+        let isSelected = selection == section
+        return sidebarButton(section) {
+            HStack(spacing: 9) {
+                Image(systemName: section.icon)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isSelected ? Color.brandAccent : section.iconColor)
+                    .frame(width: 22, alignment: .center)
+                Text(section.label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(isSelected ? Color.brandAccent : Color.primary)
+                Spacer()
+            }
         }
     }
 
@@ -234,21 +263,29 @@ struct SidebarView: View {
         onSelect: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        Button {
+        let isSelected = selection == section
+        return Button {
             selection = section
             onSelect?()
         } label: {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .padding(.vertical, 3)
+                .padding(.horizontal, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(
+                            isSelected
+                                ? Color.brandAccent.opacity(0.14)
+                                : (hoveredSection == section ? Color.primary.opacity(0.05) : Color.clear)
+                        )
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)
-        .padding(.vertical, 2)
-        .padding(.horizontal, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(selection == section ? Color.accentColor.opacity(0.15) : Color.clear)
-        )
+        .onHover { hovering in
+            hoveredSection = hovering ? section : nil
+        }
     }
 }
 

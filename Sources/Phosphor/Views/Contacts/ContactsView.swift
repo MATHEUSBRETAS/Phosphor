@@ -37,7 +37,9 @@ struct ContactsView: View {
     }
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "person.crop.circle", color: .blue, size: 40, iconSize: 19)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Contacts")
                     .font(.title2.weight(.semibold))
@@ -74,11 +76,11 @@ struct ContactsView: View {
             HStack(spacing: 10) {
                 ZStack {
                     Circle()
-                        .fill(Color.indigo.opacity(0.15))
+                        .fill(Color.brandAccent.opacity(0.15))
                         .frame(width: 36, height: 36)
                     Text(contact.initials)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(Color.brandAccent)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -114,11 +116,11 @@ struct ContactsView: View {
                         HStack(spacing: 16) {
                             ZStack {
                                 Circle()
-                                    .fill(Color.indigo.opacity(0.15))
+                                    .fill(Color.brandAccent.opacity(0.15))
                                     .frame(width: 64, height: 64)
                                 Text(contact.initials)
                                     .font(.system(size: 24, weight: .semibold))
-                                    .foregroundStyle(.indigo)
+                                    .foregroundStyle(Color.brandAccent)
                             }
 
                             VStack(alignment: .leading, spacing: 4) {

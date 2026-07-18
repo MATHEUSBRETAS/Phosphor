@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Reusable empty state placeholder with icon, title, and subtitle.
+/// Reusable empty state placeholder: icon in a soft gradient circle, title,
+/// subtitle and an optional brand-tinted action button.
 struct EmptyStateView: View {
 
     let icon: String
@@ -8,12 +9,25 @@ struct EmptyStateView: View {
     let subtitle: String
     var action: (() -> Void)?
     var actionLabel: String?
+    var color: Color = .brandAccent
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 44))
-                .foregroundStyle(.quaternary)
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [color.opacity(0.18), color.opacity(0.05)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 92, height: 92)
+                Image(systemName: icon)
+                    .font(.system(size: 38, weight: .light))
+                    .foregroundStyle(color)
+            }
+            .padding(.bottom, 2)
 
             Text(title)
                 .font(.title3.weight(.semibold))
@@ -23,14 +37,14 @@ struct EmptyStateView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 320)
+                .frame(maxWidth: 340)
 
             if let action, let label = actionLabel {
                 Button(action: action) {
                     Text(label)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.indigo)
+                .tint(.brandAccent)
                 .controlSize(.regular)
                 .padding(.top, 4)
             }
@@ -46,7 +60,8 @@ struct LoadingOverlay: View {
     var body: some View {
         VStack(spacing: 12) {
             ProgressView()
-                .scaleEffect(1.2)
+                .controlSize(.large)
+                .tint(.brandAccent)
             Text(message)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -64,26 +79,27 @@ struct InfoRow: View {
     var valueColor: Color = .primary
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 13))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: 20)
+                    .frame(width: 18, alignment: .center)
             }
             Text(label)
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
-            Spacer()
+            Spacer(minLength: 8)
             Text(value)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(valueColor)
                 .textSelection(.enabled)
         }
+        .padding(.vertical, 1)
     }
 }
 
-/// Section header with optional action button.
+/// Section header with optional borderless accent action button.
 struct SectionHeader: View {
     let title: String
     var action: (() -> Void)?
@@ -97,15 +113,19 @@ struct SectionHeader: View {
             Spacer()
             if let action {
                 Button(action: action) {
-                    if let icon = actionIcon {
-                        Image(systemName: icon)
-                    }
-                    if let label = actionLabel {
-                        Text(label)
-                            .font(.system(size: 12))
+                    HStack(spacing: 4) {
+                        if let icon = actionIcon {
+                            Image(systemName: icon)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        if let label = actionLabel {
+                            Text(label)
+                                .font(.system(size: 12, weight: .medium))
+                        }
                     }
                 }
                 .buttonStyle(.borderless)
+                .foregroundStyle(Color.brandAccent)
             }
         }
     }

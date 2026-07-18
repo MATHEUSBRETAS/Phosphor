@@ -34,7 +34,9 @@ struct CallLogView: View {
     }
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "phone.arrow.up.right", color: .green, size: 40, iconSize: 18)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Call Log")
                     .font(.title2.weight(.semibold))

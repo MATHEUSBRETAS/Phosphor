@@ -55,7 +55,9 @@ struct PhotoBrowserView: View {
     // MARK: - Header
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 14) {
+            GradientIconTile(systemName: "photo.on.rectangle.angled", color: .orange, size: 40, iconSize: 19)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Photos & Videos")
                     .font(.title2.weight(.semibold))
@@ -107,7 +109,7 @@ struct PhotoBrowserView: View {
                 )
             }
             .buttonStyle(.borderedProminent)
-            .tint(.indigo)
+            .tint(.brandAccent)
         }
         .padding(20)
     }
@@ -196,10 +198,10 @@ struct PhotoBrowserView: View {
 
                 if selectedItems.contains(photo.id) {
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.indigo, lineWidth: 3)
+                        .stroke(Color.brandAccent, lineWidth: 3)
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 18))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(Color.brandAccent)
                         .background(Circle().fill(.white).padding(2))
                         .position(x: 20, y: 20)
                 }
@@ -341,10 +343,10 @@ struct PhotoBrowserView: View {
                     .foregroundStyle(.tertiary)
                 if selectedItems.contains(item.id) {
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.indigo, lineWidth: 3)
+                        .stroke(Color.brandAccent, lineWidth: 3)
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 18))
-                        .foregroundStyle(.indigo)
+                        .foregroundStyle(Color.brandAccent)
                         .background(Circle().fill(.white).padding(2))
                         .position(x: 20, y: 20)
                 }

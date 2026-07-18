@@ -34,7 +34,14 @@ struct WhatsAppView: View {
 
     private var chatListPane: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 10) {
+                GradientIconTile(
+                    systemName: "bubble.left.and.text.bubble.right.fill",
+                    color: Color(red: 0.12, green: 0.75, blue: 0.36),
+                    size: 28,
+                    iconSize: 14,
+                    cornerRadius: 8
+                )
                 Text("WhatsApp")
                     .font(.headline)
                 Spacer()
