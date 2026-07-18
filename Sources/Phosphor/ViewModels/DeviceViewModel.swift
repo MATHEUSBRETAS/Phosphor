@@ -10,6 +10,7 @@ final class DeviceViewModel: ObservableObject {
     @Published var nearbyWirelessDevices: [PyMobileDevice.BonjourDevice] = []
     @Published var selectedDevice: DeviceInfo?
     @Published var isRefreshing = false
+    @Published var isEnablingWiFiSync = false
     @Published var showPairAlert = false
     @Published var alertMessage = ""
     @Published var systemInfo: [String: String] = [:]
@@ -70,6 +71,25 @@ final class DeviceViewModel: ObservableObject {
         guard let udid = selectedDevice?.id else { return }
         let ok = await deviceManager.pairDevice(udid: udid)
         alertMessage = ok ? "Device paired successfully" : (deviceManager.lastError ?? "Pairing failed")
+        showPairAlert = true
+        if ok { await refresh() }
+    }
+
+    func enableWiFiSync() async {
+        guard let device = selectedDevice else { return }
+        guard device.connectionType == .usb else {
+            alertMessage = "Connect this device over USB, unlock it, tap Trust, then enable Wi-Fi."
+            showPairAlert = true
+            return
+        }
+
+        isEnablingWiFiSync = true
+        let ok = await deviceManager.enableWiFiConnections(udid: device.id)
+        isEnablingWiFiSync = false
+
+        alertMessage = ok
+            ? "Wi-Fi connection enabled. Unplug the cable, keep the device unlocked and on the same Wi-Fi, then scan again."
+            : (deviceManager.lastError ?? "Failed to enable Wi-Fi connection")
         showPairAlert = true
         if ok { await refresh() }
     }

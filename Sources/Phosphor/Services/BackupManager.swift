@@ -542,8 +542,8 @@ final class BackupManager: ObservableObject {
         let pymobiledeviceStderr = pymobiledeviceStderrTail.joined(separator: "\n")
 
         // Fallback: idevicebackup2
-        backupProgress = "Trying idevicebackup2..."
-        onProgress("Falling back to idevicebackup2...")
+        backupProgress = "Backing up..."
+        onProgress("Backing up")
 
         let args = idevicebackupArguments(udid: udid, full: true, preferNetwork: preferNetwork)
         var idevicebackupStderr = ""
@@ -626,8 +626,8 @@ final class BackupManager: ObservableObject {
             return false
         }
 
-        backupProgress = "Creating backup via pymobiledevice3..."
-        onProgress("Creating backup via pymobiledevice3...")
+        backupProgress = "Backing up..."
+        onProgress("Backing up")
         pymobiledeviceStderrTail.removeAll()
 
         return await withCheckedContinuation { continuation in
@@ -654,6 +654,7 @@ final class BackupManager: ObservableObject {
                     if let pct = PyMobileDevice.parseProgress(from: trimmed) {
                         self?.backupPercent = pct
                         self?.backupProgress = "Backup: \(Int(pct * 100))%"
+                        onProgress("Backing up \(Int(pct * 100))%")
                         return
                     }
                     // Retain non-progress stderr lines so a failure surfaces the real reason.

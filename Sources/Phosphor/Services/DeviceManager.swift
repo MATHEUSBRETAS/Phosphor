@@ -373,6 +373,42 @@ final class DeviceManager: ObservableObject {
         return result.succeeded
     }
 
+    /// Enable Finder-style Wi-Fi connections for a trusted USB-connected device.
+    func enableWiFiConnections(udid: String) async -> Bool {
+        lastError = nil
+
+        let firstAttempt = await PyMobileDevice.setWiFiConnections(udid: udid, enabled: true)
+        if firstAttempt.succeeded {
+            invalidateConnectionCaches(for: udid)
+            return true
+        }
+
+        // If the device is plugged in but not fully paired yet, pairing can surface
+        // the trust flow. Retry the actual Wi-Fi setting afterwards; pairing alone
+        // is not enough to match Finder's Wi-Fi checkbox.
+        if await PyMobileDevice.pair(udid: udid) {
+            let retry = await PyMobileDevice.setWiFiConnections(udid: udid, enabled: true)
+            if retry.succeeded {
+                pairStatusCache[udid] = (true, Date())
+                invalidateConnectionCaches(for: udid)
+                return true
+            }
+            lastError = retry.stderr.nilIfEmpty ?? retry.output.nilIfEmpty ?? "Failed to enable Wi-Fi connections."
+            return false
+        }
+
+        lastError = firstAttempt.stderr.nilIfEmpty
+            ?? firstAttempt.output.nilIfEmpty
+            ?? "Connect the device over USB, unlock it, tap Trust, then try enabling Wi-Fi again."
+        return false
+    }
+
+    private func invalidateConnectionCaches(for udid: String) {
+        deviceInfoCache.removeValue(forKey: udid)
+        networkDeviceCache = nil
+        bonjourDeviceCache = nil
+    }
+
     /// Unpair a device.
     func unpairDevice(udid: String) async -> Bool {
         pairStatusCache.removeValue(forKey: udid)

@@ -5,10 +5,13 @@ import SwiftUI
 struct DeviceOverviewView: View {
 
     @EnvironmentObject var deviceVM: DeviceViewModel
+    @EnvironmentObject var backupVM: BackupViewModel
     @State private var diagnostics = DiagnosticsManager()
     @State private var battery: DiagnosticsManager.BatteryDiagnostics?
     @State private var storage: DiagnosticsManager.StorageBreakdown?
     @State private var copiedField: String?
+    @State private var showFullWiFiBackupConfirm = false
+    @State private var pendingBackupDevice: DeviceInfo?
 
     var body: some View {
         Group {
@@ -24,6 +27,7 @@ struct DeviceOverviewView: View {
                     .padding(24)
                 }
                 .task(id: device.id) {
+                    backupVM.loadBackups()
                     battery = await diagnostics.getBatteryDiagnostics(udid: device.id)
                     storage = await diagnostics.getStorageBreakdown(udid: device.id)
                 }
@@ -31,6 +35,39 @@ struct DeviceOverviewView: View {
                 noDeviceView
             }
         }
+        .alert("Device", isPresented: $deviceVM.showPairAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deviceVM.alertMessage)
+        }
+        .alert("Backup", isPresented: $backupVM.showAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(backupVM.alertMessage)
+        }
+        .alert("Backup Issue", isPresented: backupIssuePresented) {
+            Button("OK", role: .cancel) { backupVM.backupIssue = nil }
+        } message: {
+            Text(backupVM.backupIssue.map { "\($0.title)\n\n\($0.message)" } ?? "Backup failed")
+        }
+        .alert("Full Wi-Fi Backup?", isPresented: $showFullWiFiBackupConfirm) {
+            Button("Run Full Wi-Fi Backup") {
+                if let device = pendingBackupDevice {
+                    Task { await backupVM.createBackup(udid: device.id, incremental: false, preferNetwork: true) }
+                }
+                pendingBackupDevice = nil
+            }
+            Button("Cancel", role: .cancel) { pendingBackupDevice = nil }
+        } message: {
+            Text("This device is connected over Wi-Fi. Full backups can be slower and more sensitive to sleep, lock, and network interruptions. Incremental Wi-Fi Backup is recommended when a complete backup already exists.")
+        }
+    }
+
+    private var backupIssuePresented: Binding<Bool> {
+        Binding(
+            get: { backupVM.backupIssue != nil },
+            set: { if !$0 { backupVM.backupIssue = nil } }
+        )
     }
 
     private var noDeviceView: some View {
@@ -348,19 +385,83 @@ struct DeviceOverviewView: View {
                     Task { let _ = await diagnostics.sleepDevice(udid: device.id) }
                 }
                 ActionButton(icon: "camera.fill", label: "Screenshot") {
-                    Task { let _ = await deviceVM.takeScreenshot() }
+                    Task { await deviceVM.takeScreenshot() }
                 }
+                ActionButton(
+                    icon: backupVM.isCreating ? "hourglass" : backupActionIcon(for: device),
+                    label: backupVM.isCreating ? "Backing Up..." : backupActionLabel(for: device)
+                ) {
+                    startBackup(for: device)
+                }
+                .disabled(backupVM.isCreating)
+                .help("Start a backup for this device")
                 if !device.isPaired {
                     ActionButton(icon: "link", label: "Pair") {
                         Task { await deviceVM.pair() }
                     }
                 }
+                if device.connectionType == .usb {
+                    ActionButton(
+                        icon: deviceVM.isEnablingWiFiSync ? "hourglass" : "wifi",
+                        label: deviceVM.isEnablingWiFiSync ? "Enabling..." : "Enable Wi-Fi"
+                    ) {
+                        Task { await deviceVM.enableWiFiSync() }
+                    }
+                    .disabled(deviceVM.isEnablingWiFiSync)
+                    .help("Enable Finder's Show this iPhone when on Wi-Fi option for this trusted USB device")
+                }
+            }
+
+            if backupVM.isCreating {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(backupVM.displayProgressText)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    ProgressView(value: backupVM.displayProgressFraction, total: 1.0)
+                        .progressViewStyle(.linear)
+                        .tint(.indigo)
+                }
+            }
+
+            if device.connectionType == .usb {
+                Text("Enable Wi-Fi turns on Finder's \"Show this iPhone when on Wi-Fi\" option. After it succeeds, unplug the cable, keep the device unlocked, then scan again.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .cardStyle()
     }
 
     // MARK: - Helpers
+
+    private func hasCompleteBackup(for device: DeviceInfo) -> Bool {
+        BackupManager.hasExistingBackup(for: device.id) && backupVM.backups.contains { backup in
+            backup.udid == device.id || backup.id == device.id
+        }
+    }
+
+    private func backupActionLabel(for device: DeviceInfo) -> String {
+        if device.connectionType == .wifi {
+            return hasCompleteBackup(for: device) ? "Wi-Fi Backup" : "Full Wi-Fi"
+        }
+        return hasCompleteBackup(for: device) ? "Backup" : "Full Backup"
+    }
+
+    private func backupActionIcon(for device: DeviceInfo) -> String {
+        device.connectionType == .wifi ? "wifi" : "externaldrive.badge.plus"
+    }
+
+    private func startBackup(for device: DeviceInfo) {
+        let preferNetwork = device.connectionType == .wifi
+        let incremental = preferNetwork && hasCompleteBackup(for: device)
+        if preferNetwork && !incremental {
+            pendingBackupDevice = device
+            showFullWiFiBackupConfirm = true
+            return
+        }
+        Task { await backupVM.createBackup(udid: device.id, incremental: incremental, preferNetwork: preferNetwork) }
+    }
 
     private func copyableInfoRow(label: String, value: String, icon: String) -> some View {
         InfoRow(label: label, value: value, icon: icon)
