@@ -180,6 +180,14 @@ final class BackupManifest {
         return rows.first.flatMap(parseFileEntry)
     }
 
+    /// Get the Photos.sqlite database from the Camera Roll domain (iOS 8+).
+    func photosDatabase() throws -> FileEntry? {
+        let rows = try db.query(
+            "SELECT fileID, domain, relativePath, flags FROM Files WHERE domain = 'CameraRollDomain' AND relativePath = 'Media/PhotoData/Photos.sqlite'"
+        )
+        return rows.first.flatMap(parseFileEntry)
+    }
+
     /// Get all photo files from Camera Roll.
     func cameraRollPhotos() throws -> [FileEntry] {
         let rows = try db.query(

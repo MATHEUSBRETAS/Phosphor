@@ -11,12 +11,15 @@ struct PhotoBrowserView: View {
     @State private var filterType: MediaItem.MediaType?
     @State private var viewMode: ViewMode = .grid
     @State private var sourceMode: SourceMode = .device
+    @State private var browseMode: BrowseMode = .byType
+    @State private var selectedAlbum: PhotoAlbum?
 
     enum ViewMode { case grid, list }
     enum SourceMode: String, CaseIterable {
         case device = "From Device"
         case backup = "From Backup"
     }
+    enum BrowseMode { case byType, byAlbum }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,7 +34,6 @@ struct PhotoBrowserView: View {
             }
         }
         .onAppear {
-            // Auto-mount device if connected
             if deviceVM.selectedDevice != nil && !liveBrowser.isMounted {
                 Task {
                     if let udid = deviceVM.selectedDevice?.id {
@@ -40,7 +42,6 @@ struct PhotoBrowserView: View {
                     }
                 }
             }
-            // Also load backup photos if available
             if let backup = backupVM.selectedBackup {
                 Task { await photoVM.loadPhotos(from: backup.path) }
             }
@@ -69,7 +70,7 @@ struct PhotoBrowserView: View {
                 } else {
                     let stats = photoVM.stats
                     if stats.photos > 0 || stats.videos > 0 {
-                        Text("\(stats.photos) photos, \(stats.videos) videos - \(stats.totalSize.formattedFileSize)")
+                        Text("\(stats.photos) photos, \(stats.videos) videos · \(stats.totalSize.formattedFileSize)")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -78,7 +79,6 @@ struct PhotoBrowserView: View {
 
             Spacer()
 
-            // Source toggle
             Picker("Source", selection: $sourceMode) {
                 ForEach(SourceMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
@@ -86,7 +86,6 @@ struct PhotoBrowserView: View {
             .labelsHidden()
             .frame(width: 220)
 
-            // View mode toggle
             Picker("View", selection: $viewMode) {
                 Image(systemName: "square.grid.2x2").tag(ViewMode.grid)
                 Image(systemName: "list.bullet").tag(ViewMode.list)
@@ -95,7 +94,6 @@ struct PhotoBrowserView: View {
             .labelsHidden()
             .frame(width: 72)
 
-            // Extract button
             Button {
                 if sourceMode == .device {
                     extractFromDevice()
@@ -139,9 +137,7 @@ struct PhotoBrowserView: View {
                     icon: "photo.on.rectangle.angled",
                     title: "No Photos Found",
                     subtitle: "DCIM folder is empty or inaccessible.",
-                    action: {
-                        Task { await liveBrowser.scanPhotos() }
-                    },
+                    action: { Task { await liveBrowser.scanPhotos() } },
                     actionLabel: "Scan Again"
                 )
             } else {
@@ -171,10 +167,7 @@ struct PhotoBrowserView: View {
                     .fill(Color(.controlBackgroundColor))
                     .frame(height: 100)
 
-                // In AFC mode, photo.path is a device path - show file type icon
-                // Local files (ifuse mount) can show actual thumbnail
                 if photo.path.hasPrefix("/DCIM") {
-                    // AFC mode: device path, can't load locally
                     VStack(spacing: 4) {
                         Image(systemName: photo.isVideo ? "video.fill" : "photo")
                             .font(.system(size: 24))
@@ -211,10 +204,8 @@ struct PhotoBrowserView: View {
                         Spacer()
                         HStack {
                             Spacer()
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 8))
-                            Text(photo.sizeString)
-                                .font(.system(size: 9, weight: .medium))
+                            Image(systemName: "play.fill").font(.system(size: 8))
+                            Text(photo.sizeString).font(.system(size: 9, weight: .medium))
                         }
                         .foregroundStyle(.white)
                         .padding(4)
@@ -237,7 +228,6 @@ struct PhotoBrowserView: View {
     private var liveListView: some View {
         List(liveBrowser.photos) { photo in
             HStack(spacing: 10) {
-                // In AFC mode, show icon; ifuse mode can show thumbnail
                 if photo.path.hasPrefix("/DCIM"), true {
                     Image(systemName: photo.sfSymbol)
                         .font(.system(size: 14))
@@ -259,18 +249,12 @@ struct PhotoBrowserView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(photo.name)
-                        .font(.system(size: 13))
-                        .lineLimit(1)
+                    Text(photo.name).font(.system(size: 13)).lineLimit(1)
                     if let date = photo.modified {
-                        Text(date.shortString)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
+                        Text(date.shortString).font(.system(size: 10)).foregroundStyle(.tertiary)
                     }
                 }
-
                 Spacer()
-
                 Text(photo.sizeString)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -313,13 +297,185 @@ struct PhotoBrowserView: View {
                     subtitle: "This backup doesn't contain Camera Roll photos, or it may be encrypted."
                 )
             } else {
-                switch viewMode {
-                case .grid: backupGridView
-                case .list: backupListView
+                VStack(spacing: 0) {
+                    // Browse mode picker
+                    HStack(spacing: 0) {
+                        Picker("Browse Mode", selection: $browseMode) {
+                            Text("By Type").tag(BrowseMode.byType)
+                            Text("By Album").tag(BrowseMode.byAlbum)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 220)
+                        .padding(.leading, 16)
+
+                        Spacer()
+
+                        if browseMode == .byAlbum, let album = selectedAlbum {
+                            Button {
+                                selectedAlbum = nil
+                                selectedItems.removeAll()
+                            } label: {
+                                Label("All Albums", systemImage: "chevron.left")
+                                    .font(.system(size: 13))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.brandAccent)
+                            .padding(.trailing, 16)
+                        }
+                    }
+                    .padding(.vertical, 10)
+
+                    Divider()
+
+                    // Type filter strip (only in By Type mode)
+                    if browseMode == .byType {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                filterChip(nil, label: "All", icon: "photo.on.rectangle")
+                                filterChip(.photo, label: "Photos", icon: "photo")
+                                filterChip(.video, label: "Videos", icon: "video")
+                                filterChip(.screenshot, label: "Screenshots", icon: "rectangle.dashed")
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                        }
+                        Divider()
+                    }
+
+                    // Album breadcrumb when drilling into an album
+                    if browseMode == .byAlbum, let album = selectedAlbum {
+                        HStack(spacing: 8) {
+                            Image(systemName: album.kind.sfSymbol)
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary)
+                            Text(album.title)
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("·")
+                                .foregroundStyle(.tertiary)
+                            Text("\(album.itemCount) items")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        Divider()
+                    }
+
+                    // Content area
+                    Group {
+                        switch browseMode {
+                        case .byType:
+                            switch viewMode {
+                            case .grid: backupGridView
+                            case .list: backupListView
+                            }
+                        case .byAlbum:
+                            if photoVM.albumService.isLoading {
+                                LoadingOverlay(message: "Loading albums…")
+                            } else if selectedAlbum != nil {
+                                switch viewMode {
+                                case .grid: backupGridView
+                                case .list: backupListView
+                                }
+                            } else {
+                                albumGridView
+                            }
+                        }
+                    }
+                }
+                .onChange(of: browseMode) { _, _ in
+                    selectedAlbum = nil
+                    selectedItems.removeAll()
                 }
             }
         }
     }
+
+    // MARK: - Album Grid
+
+    private var albumGridView: some View {
+        Group {
+            if photoVM.albumService.albums.isEmpty {
+                EmptyStateView(
+                    icon: "rectangle.stack",
+                    title: "No Albums Found",
+                    subtitle: "Photos.sqlite was not found in this backup, or no user albums exist."
+                )
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 12)], spacing: 12) {
+                        ForEach(photoVM.albumService.albums) { album in
+                            albumCard(album)
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+    }
+
+    private func albumCard(_ album: PhotoAlbum) -> some View {
+        Button {
+            selectedAlbum = album
+            selectedItems.removeAll()
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(.controlBackgroundColor))
+                        .frame(height: 110)
+                    Image(systemName: album.kind.sfSymbol)
+                        .font(.system(size: 32))
+                        .foregroundStyle(.tertiary)
+                    // Show media type breakdown in corner
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            let videos = album.items.filter { $0.mediaType == .video }.count
+                            if videos > 0 {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "video.fill").font(.system(size: 8))
+                                    Text("\(videos)").font(.system(size: 9, weight: .medium))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 3)
+                                .background(.black.opacity(0.55))
+                                .clipShape(Capsule())
+                                .padding(6)
+                            }
+                        }
+                    }
+                }
+                .frame(height: 110)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(album.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text("\(album.itemCount) items")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        if album.kind == .smart {
+                            Text("·")
+                                .foregroundStyle(.tertiary)
+                                .font(.system(size: 11))
+                            Text(album.kind.label)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Backup Grid / List
 
     private var backupGridView: some View {
         ScrollView {
@@ -369,9 +525,7 @@ struct PhotoBrowserView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 20)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(item.filename)
-                        .font(.system(size: 13))
-                        .lineLimit(1)
+                    Text(item.filename).font(.system(size: 13)).lineLimit(1)
                     Text(item.relativePath)
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
@@ -390,16 +544,30 @@ struct PhotoBrowserView: View {
     // MARK: - Helpers
 
     private var displayedItems: [MediaItem] {
+        if browseMode == .byAlbum, let album = selectedAlbum {
+            return album.items
+        }
         guard let filter = filterType else { return photoVM.items }
         return photoVM.items.filter { $0.mediaType == filter }
     }
 
-    private func toggleSelection(_ id: String) {
-        if selectedItems.contains(id) {
-            selectedItems.remove(id)
-        } else {
-            selectedItems.insert(id)
+    private func filterChip(_ type: MediaItem.MediaType?, label: String, icon: String) -> some View {
+        Button { filterType = type } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 11))
+                Text(label).font(.system(size: 12, weight: .medium))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(filterType == type ? Color.brandAccent : Color(.controlBackgroundColor))
+            .foregroundStyle(filterType == type ? Color.white : Color.primary)
+            .clipShape(Capsule())
         }
+        .buttonStyle(.plain)
+    }
+
+    private func toggleSelection(_ id: String) {
+        if selectedItems.contains(id) { selectedItems.remove(id) } else { selectedItems.insert(id) }
     }
 
     private func extractFromDevice() {
@@ -416,7 +584,6 @@ struct PhotoBrowserView: View {
         } else {
             photosToExtract = liveBrowser.photos.filter { selectedItems.contains($0.id) }
         }
-
         Task {
             let count = await liveBrowser.exportPhotos(photosToExtract, to: url.path)
             if count > 0 { NSWorkspace.shared.open(url) }
@@ -430,6 +597,7 @@ struct PhotoBrowserView: View {
         panel.canCreateDirectories = true
         panel.prompt = "Extract Here"
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard backupVM.selectedBackup != nil else { return }
 
         let itemsToExtract: [MediaItem]
         if selectedItems.isEmpty {
@@ -437,8 +605,6 @@ struct PhotoBrowserView: View {
         } else {
             itemsToExtract = displayedItems.filter { selectedItems.contains($0.id) }
         }
-        guard backupVM.selectedBackup != nil else { return }
-
         Task {
             let count = await photoVM.extractSelected(itemsToExtract, to: url.path)
             if count > 0 { NSWorkspace.shared.open(url) }
