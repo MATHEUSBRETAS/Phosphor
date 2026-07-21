@@ -297,98 +297,110 @@ struct PhotoBrowserView: View {
                     subtitle: "This backup doesn't contain Camera Roll photos, or it may be encrypted."
                 )
             } else {
-                VStack(spacing: 0) {
-                    // Browse mode picker
-                    HStack(spacing: 0) {
-                        Picker("Browse Mode", selection: $browseMode) {
-                            Text("By Type").tag(BrowseMode.byType)
-                            Text("By Album").tag(BrowseMode.byAlbum)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 220)
-                        .padding(.leading, 16)
+                backupContentView
+            }
+        }
+    }
 
-                        Spacer()
-
-                        if browseMode == .byAlbum, let album = selectedAlbum {
-                            Button {
-                                selectedAlbum = nil
-                                selectedItems.removeAll()
-                            } label: {
-                                Label("All Albums", systemImage: "chevron.left")
-                                    .font(.system(size: 13))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.brandAccent)
-                            .padding(.trailing, 16)
-                        }
-                    }
-                    .padding(.vertical, 10)
-
-                    Divider()
-
-                    // Type filter strip (only in By Type mode)
-                    if browseMode == .byType {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                filterChip(nil, label: "All", icon: "photo.on.rectangle")
-                                filterChip(.photo, label: "Photos", icon: "photo")
-                                filterChip(.video, label: "Videos", icon: "video")
-                                filterChip(.screenshot, label: "Screenshots", icon: "rectangle.dashed")
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                        }
-                        Divider()
-                    }
-
-                    // Album breadcrumb when drilling into an album
-                    if browseMode == .byAlbum, let album = selectedAlbum {
-                        HStack(spacing: 8) {
-                            Image(systemName: album.kind.sfSymbol)
-                                .font(.system(size: 13))
-                                .foregroundStyle(.secondary)
-                            Text(album.title)
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("·")
-                                .foregroundStyle(.tertiary)
-                            Text("\(album.itemCount) items")
-                                .font(.system(size: 13))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        Divider()
-                    }
-
-                    // Content area
-                    Group {
-                        switch browseMode {
-                        case .byType:
-                            switch viewMode {
-                            case .grid: backupGridView
-                            case .list: backupListView
-                            }
-                        case .byAlbum:
-                            if photoVM.albumService.isLoading {
-                                LoadingOverlay(message: "Loading albums…")
-                            } else if selectedAlbum != nil {
-                                switch viewMode {
-                                case .grid: backupGridView
-                                case .list: backupListView
-                                }
-                            } else {
-                                albumGridView
-                            }
-                        }
-                    }
+    private var backupContentView: some View {
+        VStack(spacing: 0) {
+            // Browse mode picker + back button
+            HStack(spacing: 0) {
+                Picker("Browse Mode", selection: $browseMode) {
+                    Text("By Type").tag(BrowseMode.byType)
+                    Text("By Album").tag(BrowseMode.byAlbum)
                 }
-                .onChange(of: browseMode) { _, _ in
-                    selectedAlbum = nil
-                    selectedItems.removeAll()
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+                .padding(.leading, 16)
+
+                Spacer()
+
+                if browseMode == .byAlbum && selectedAlbum != nil {
+                    Button {
+                        selectedAlbum = nil
+                        selectedItems.removeAll()
+                    } label: {
+                        Label("All Albums", systemImage: "chevron.left")
+                            .font(.system(size: 13))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.brandAccent)
+                    .padding(.trailing, 16)
                 }
             }
+            .padding(.vertical, 10)
+
+            Divider()
+
+            // Type filter strip (only in By Type mode)
+            if browseMode == .byType {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        filterChip(nil, label: "All", icon: "photo.on.rectangle")
+                        filterChip(.photo, label: "Photos", icon: "photo")
+                        filterChip(.video, label: "Videos", icon: "video")
+                        filterChip(.screenshot, label: "Screenshots", icon: "rectangle.dashed")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                Divider()
+            }
+
+            // Album breadcrumb when drilling into an album
+            if browseMode == .byAlbum, let album = selectedAlbum {
+                HStack(spacing: 8) {
+                    Image(systemName: album.kind.sfSymbol)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    Text(album.title)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("·").foregroundStyle(.tertiary)
+                    Text("\(album.itemCount) items")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                Divider()
+            }
+
+            backupBodyView
+        }
+        .onChange(of: browseMode) { _, _ in
+            selectedAlbum = nil
+            selectedItems.removeAll()
+        }
+    }
+
+    @ViewBuilder
+    private var backupBodyView: some View {
+        switch browseMode {
+        case .byType:
+            backupMediaView
+        case .byAlbum:
+            albumBrowseView
+        }
+    }
+
+    @ViewBuilder
+    private var backupMediaView: some View {
+        switch viewMode {
+        case .grid: backupGridView
+        case .list: backupListView
+        }
+    }
+
+    @ViewBuilder
+    private var albumBrowseView: some View {
+        if photoVM.albumService.isLoading {
+            LoadingOverlay(message: "Loading albums…")
+        } else if selectedAlbum != nil {
+            backupMediaView
+        } else {
+            albumGridView
         }
     }
 
