@@ -107,7 +107,7 @@ struct PhotoBrowserView: View {
                 )
             }
             .buttonStyle(.borderedProminent)
-            .tint(.brandAccent)
+            .tint(Color.brandAccent)
         }
         .padding(20)
     }
@@ -325,7 +325,7 @@ struct PhotoBrowserView: View {
                             .font(.system(size: 13))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.brandAccent)
+                    .foregroundStyle(Color.brandAccent)
                     .padding(.trailing, 16)
                 }
             }
