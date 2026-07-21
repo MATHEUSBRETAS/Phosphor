@@ -472,11 +472,12 @@ struct PhotoBrowserView: View {
     }
 
     private func loadThumbnail(_ photo: LiveDeviceBrowser.LivePhoto) {
-        // Skip videos and already-loaded/loading thumbnails
+        // Skip videos, already-loaded, already-loading, and when a preview is open
         guard !photo.isVideo,
               thumbnails[photo.id] == nil,
-              !thumbnailLoadingIDs.contains(photo.id) else { return }
-        // Limit concurrent thumbnail fetches to avoid overwhelming the device
+              !thumbnailLoadingIDs.contains(photo.id),
+              previewPhoto == nil else { return }
+        // Limit to 3 concurrent AFC pulls
         guard thumbnailLoadingIDs.count < 3 else { return }
 
         thumbnailLoadingIDs.insert(photo.id)
@@ -484,18 +485,16 @@ struct PhotoBrowserView: View {
             defer { thumbnailLoadingIDs.remove(photo.id) }
             guard let path = (await liveBrowser.pullPhoto(photo, timeout: 20)).path else { return }
             guard !Task.isCancelled else { return }
-            // Use CGImageSource to decode only the embedded thumbnail (~KB, not full 4K image)
-            let url = URL(fileURLWithPath: path) as CFURL
-            let opts = [kCGImageSourceShouldCache: false] as CFDictionary
-            guard let src = CGImageSourceCreateWithURL(url, opts) else { return }
+            let cfURL = URL(fileURLWithPath: path) as CFURL
+            guard let src = CGImageSourceCreateWithURL(cfURL, nil) else { return }
             let thumbOpts: [CFString: Any] = [
-                kCGImageSourceThumbnailMaxPixelSize: 320,
+                kCGImageSourceThumbnailMaxPixelSize: 300,
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: false
+                kCGImageSourceCreateThumbnailWithTransform: true
             ]
             guard let cgThumb = CGImageSourceCreateThumbnailAtIndex(src, 0, thumbOpts as CFDictionary) else { return }
-            let thumb = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+            let thumb = NSImage(cgImage: cgThumb,
+                                size: NSSize(width: CGFloat(cgThumb.width), height: CGFloat(cgThumb.height)))
             thumbnails[photo.id] = thumb
         }
     }

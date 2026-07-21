@@ -1,9 +1,7 @@
 import SwiftUI
 import AVKit
-import AVFoundation
 
 /// In-app photo/video preview sheet for live device photos.
-/// Self-contained: pulls the file from device internally via .task{}.
 struct PhotoPreviewSheet: View {
     let photo: LiveDeviceBrowser.LivePhoto
     let browser: LiveDeviceBrowser
@@ -12,11 +10,9 @@ struct PhotoPreviewSheet: View {
     @State private var localPath: String?
     @State private var pullError: String?
     @State private var player: AVPlayer?
-    @State private var videoThumb: NSImage?
 
     var body: some View {
         VStack(spacing: 0) {
-            // Title bar
             HStack(spacing: 12) {
                 Image(systemName: photo.isVideo ? "video.fill" : "photo")
                     .foregroundStyle(.secondary)
@@ -47,28 +43,21 @@ struct PhotoPreviewSheet: View {
         }
         .frame(minWidth: 720, minHeight: 540)
         .task {
-            guard localPath == nil && pullError == nil else { return }
-            let result = await browser.pullPhoto(photo, timeout: photo.isVideo ? 300 : 60)
+            guard localPath == nil, pullError == nil else { return }
+            let timeout: TimeInterval = photo.isVideo ? 300 : 60
+            let result = await browser.pullPhoto(photo, timeout: timeout)
             guard !Task.isCancelled else { return }
             if let path = result.path {
                 localPath = path
-                if photo.isVideo {
-                    let url = URL(fileURLWithPath: path)
-                    // Generate thumbnail from first frame before starting player
-                    let asset = AVURLAsset(url: url)
-                    let gen = AVAssetImageGenerator(asset: asset)
-                    gen.appliesPreferredTrackTransform = true
-                    if let cgImg = try? gen.copyCGImage(at: .zero, actualTime: nil) {
-                        videoThumb = NSImage(cgImage: cgImg, size: .zero)
-                    }
-                    // Start player
-                    let p = AVPlayer(url: url)
-                    player = p
-                    p.play()
-                }
             } else {
                 pullError = result.error ?? "Unknown error."
             }
+        }
+        .onChange(of: localPath) { _, path in
+            guard photo.isVideo, let path else { return }
+            let p = AVPlayer(url: URL(fileURLWithPath: path))
+            player = p
+            p.play()
         }
         .onDisappear {
             player?.pause()
@@ -82,10 +71,19 @@ struct PhotoPreviewSheet: View {
             errorView(message: error)
         } else if let path = localPath {
             if photo.isVideo {
-                videoView(path: path)
+                videoContent
             } else {
                 imageView(path: path)
             }
+        } else {
+            loadingView
+        }
+    }
+
+    @ViewBuilder
+    private var videoContent: some View {
+        if let p = player {
+            VideoPlayer(player: p)
         } else {
             loadingView
         }
@@ -99,34 +97,14 @@ struct PhotoPreviewSheet: View {
                 .aspectRatio(contentMode: .fit)
                 .padding(16)
         } else {
-            errorView(message: "Cannot display this image.\nFile may be in an unsupported format.")
-        }
-    }
-
-    @ViewBuilder
-    private func videoView(path: String) -> some View {
-        if let p = player {
-            VideoPlayer(player: p)
-        } else if let thumb = videoThumb {
-            // Show first frame while player initializes
-            Image(nsImage: thumb)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .overlay(
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 64))
-                        .foregroundStyle(.white.opacity(0.9))
-                        .shadow(radius: 8)
-                )
-        } else {
-            loadingView
+            errorView(message: "Cannot display this file.")
         }
     }
 
     private var loadingView: some View {
         VStack(spacing: 12) {
             ProgressView().scaleEffect(1.2)
-            Text(photo.isVideo ? "Downloading video from device…" : "Downloading from device…")
+            Text(photo.isVideo ? "Downloading video…" : "Downloading photo…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Text("This may take a moment on large files.")
