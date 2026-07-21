@@ -15,6 +15,12 @@ struct PhotoBrowserView: View {
     @State private var selectedAlbum: PhotoAlbum?
     @State private var deviceBrowseMode: BrowseMode = .byType
     @State private var selectedDeviceAlbum: LiveDeviceBrowser.LiveAlbum?
+    @State private var previewPhoto: LiveDeviceBrowser.LivePhoto?
+    @State private var previewLocalPath: String?
+    @State private var isShowingPreview = false
+    @State private var deviceFilter: DeviceFilter = .all
+
+    enum DeviceFilter { case all, photos, videos }
 
     enum ViewMode { case grid, list }
     enum SourceMode: String, CaseIterable {
@@ -52,6 +58,11 @@ struct PhotoBrowserView: View {
             Button("OK") {}
         } message: {
             Text(photoVM.alertMessage)
+        }
+        .sheet(isPresented: $isShowingPreview) {
+            PhotoPreviewSheet(photo: previewPhoto ?? LiveDeviceBrowser.LivePhoto(
+                id: "", name: "", path: "", size: 0, modified: nil, isVideo: false
+            ), localPath: $previewLocalPath)
         }
     }
 
@@ -179,6 +190,20 @@ struct PhotoBrowserView: View {
 
             Divider()
 
+            // Type filter strip (only in By Type mode)
+            if deviceBrowseMode == .byType {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        deviceFilterChip(.all, label: "All", icon: "photo.on.rectangle")
+                        deviceFilterChip(.photos, label: "Photos", icon: "photo")
+                        deviceFilterChip(.videos, label: "Videos", icon: "video")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                Divider()
+            }
+
             // Album breadcrumb
             if deviceBrowseMode == .byAlbum, let album = selectedDeviceAlbum {
                 HStack(spacing: 8) {
@@ -203,6 +228,7 @@ struct PhotoBrowserView: View {
         .onChange(of: deviceBrowseMode) { _, _ in
             selectedDeviceAlbum = nil
             selectedItems.removeAll()
+            deviceFilter = .all
             if deviceBrowseMode == .byAlbum && liveBrowser.albums.isEmpty {
                 Task { await liveBrowser.scanAlbums() }
             }
@@ -310,16 +336,17 @@ struct PhotoBrowserView: View {
 
     @ViewBuilder
     private func liveAlbumDetailView(_ album: LiveDeviceBrowser.LiveAlbum) -> some View {
+        let photos = filteredAlbumPhotos(album.photos)
         switch viewMode {
         case .grid:
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 8)], spacing: 8) {
-                    ForEach(album.photos) { photo in livePhotoCell(photo) }
+                    ForEach(photos) { photo in livePhotoCell(photo) }
                 }
                 .padding(16)
             }
         case .list:
-            List(album.photos) { photo in
+            List(photos) { photo in
                 HStack(spacing: 10) {
                     Image(systemName: photo.sfSymbol)
                         .font(.system(size: 14))
@@ -339,10 +366,26 @@ struct PhotoBrowserView: View {
         }
     }
 
+    private var filteredLivePhotos: [LiveDeviceBrowser.LivePhoto] {
+        switch deviceFilter {
+        case .all: return liveBrowser.photos
+        case .photos: return liveBrowser.photos.filter { !$0.isVideo }
+        case .videos: return liveBrowser.photos.filter { $0.isVideo }
+        }
+    }
+
+    private func filteredAlbumPhotos(_ photos: [LiveDeviceBrowser.LivePhoto]) -> [LiveDeviceBrowser.LivePhoto] {
+        switch deviceFilter {
+        case .all: return photos
+        case .photos: return photos.filter { !$0.isVideo }
+        case .videos: return photos.filter { $0.isVideo }
+        }
+    }
+
     private var liveGridView: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 8)], spacing: 8) {
-                ForEach(liveBrowser.photos) { photo in
+                ForEach(filteredLivePhotos) { photo in
                     livePhotoCell(photo)
                 }
             }
@@ -379,34 +422,53 @@ struct PhotoBrowserView: View {
                         .foregroundStyle(.tertiary)
                 }
 
+                // Selection border
                 if selectedItems.contains(photo.id) {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.brandAccent, lineWidth: 3)
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(Color.brandAccent)
-                        .background(Circle().fill(.white).padding(2))
-                        .position(x: 20, y: 20)
                 }
 
-                if photo.isVideo {
-                    VStack {
+                // Selection checkbox (top-left) + video badge (bottom-right)
+                VStack {
+                    HStack {
+                        Button {
+                            toggleSelection(photo.id)
+                        } label: {
+                            Image(systemName: selectedItems.contains(photo.id)
+                                  ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 18))
+                                .foregroundStyle(selectedItems.contains(photo.id)
+                                                 ? Color.brandAccent : Color.white)
+                                .background(Circle().fill(
+                                    selectedItems.contains(photo.id)
+                                        ? Color.white : Color.black.opacity(0.3)
+                                ).padding(2))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(4)
                         Spacer()
+                    }
+                    Spacer()
+                    if photo.isVideo {
                         HStack {
                             Spacer()
-                            Image(systemName: "play.fill").font(.system(size: 8))
-                            Text(photo.sizeString).font(.system(size: 9, weight: .medium))
+                            HStack(spacing: 3) {
+                                Image(systemName: "play.fill").font(.system(size: 8))
+                                Text(photo.sizeString).font(.system(size: 9, weight: .medium))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(4)
+                            .background(.black.opacity(0.6))
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .padding(4)
                         }
-                        .foregroundStyle(.white)
-                        .padding(4)
-                        .background(.black.opacity(0.6))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .padding(4)
                     }
                 }
             }
             .frame(height: 100)
-            .onTapGesture { toggleSelection(photo.id) }
+            .onTapGesture {
+                openPreview(photo)
+            }
 
             Text(photo.name)
                 .font(.system(size: 10))
@@ -415,8 +477,17 @@ struct PhotoBrowserView: View {
         }
     }
 
+    private func openPreview(_ photo: LiveDeviceBrowser.LivePhoto) {
+        previewPhoto = photo
+        previewLocalPath = nil
+        isShowingPreview = true
+        Task {
+            previewLocalPath = await liveBrowser.pullPhoto(photo)
+        }
+    }
+
     private var liveListView: some View {
-        List(liveBrowser.photos) { photo in
+        List(filteredLivePhotos) { photo in
             HStack(spacing: 10) {
                 if photo.path.hasPrefix("/DCIM"), true {
                     Image(systemName: photo.sfSymbol)
@@ -751,6 +822,21 @@ struct PhotoBrowserView: View {
         }
         guard let filter = filterType else { return photoVM.items }
         return photoVM.items.filter { $0.mediaType == filter }
+    }
+
+    private func deviceFilterChip(_ filter: DeviceFilter, label: String, icon: String) -> some View {
+        Button { deviceFilter = filter } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 11))
+                Text(label).font(.system(size: 12, weight: .medium))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(deviceFilter == filter ? Color.brandAccent : Color(.controlBackgroundColor))
+            .foregroundStyle(deviceFilter == filter ? Color.white : Color.primary)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func filterChip(_ type: MediaItem.MediaType?, label: String, icon: String) -> some View {
