@@ -46,7 +46,7 @@ struct PhotoPreviewSheet: View {
         .frame(minWidth: 720, minHeight: 540)
         .task {
             guard localPath == nil && pullError == nil else { return }
-            let result = await browser.pullPhoto(photo, timeout: 30)
+            let result = await browser.pullPhoto(photo, timeout: photo.isVideo ? 300 : 60)
             if let path = result.path {
                 localPath = path
                 if photo.isVideo {

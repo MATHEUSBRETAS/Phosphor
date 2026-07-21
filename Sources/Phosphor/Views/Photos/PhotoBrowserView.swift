@@ -17,6 +17,8 @@ struct PhotoBrowserView: View {
     @State private var selectedDeviceAlbum: LiveDeviceBrowser.LiveAlbum?
     @State private var previewPhoto: LiveDeviceBrowser.LivePhoto?
     @State private var deviceFilter: DeviceFilter = .all
+    @State private var thumbnails: [String: NSImage] = [:]
+    @State private var thumbnailLoadingIDs: Set<String> = []
 
     enum DeviceFilter { case all, photos, videos }
 
@@ -396,7 +398,14 @@ struct PhotoBrowserView: View {
                     .fill(Color(.controlBackgroundColor))
                     .frame(height: 100)
 
-                if photo.path.hasPrefix("/DCIM") {
+                // Thumbnail or placeholder
+                if let thumb = thumbnails[photo.id] {
+                    Image(nsImage: thumb)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 100)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else {
                     VStack(spacing: 4) {
                         Image(systemName: photo.isVideo ? "video.fill" : "photo")
                             .font(.system(size: 24))
@@ -406,16 +415,6 @@ struct PhotoBrowserView: View {
                             .font(.system(size: 9, weight: .medium, design: .rounded))
                             .foregroundStyle(.tertiary)
                     }
-                } else if let nsImage = NSImage(contentsOfFile: photo.path) {
-                    Image(nsImage: nsImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(height: 100)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                } else {
-                    Image(systemName: photo.sfSymbol)
-                        .font(.system(size: 28))
-                        .foregroundStyle(.tertiary)
                 }
 
                 // Selection border
@@ -430,15 +429,13 @@ struct PhotoBrowserView: View {
                         Spacer()
                         HStack {
                             Spacer()
-                            HStack(spacing: 3) {
-                                Image(systemName: "play.fill").font(.system(size: 8))
-                                Text(photo.sizeString).font(.system(size: 9, weight: .medium))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(4)
-                            .background(.black.opacity(0.6))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .padding(4)
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white)
+                                .padding(6)
+                                .background(.black.opacity(0.6))
+                                .clipShape(Circle())
+                                .padding(6)
                         }
                     }
                 }
@@ -463,14 +460,30 @@ struct PhotoBrowserView: View {
                 }
             }
             .frame(height: 100)
-            .onTapGesture {
-                openPreview(photo)
-            }
+            .onTapGesture { openPreview(photo) }
+            .onAppear { loadThumbnail(photo) }
 
             Text(photo.name)
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+        }
+    }
+
+    private func loadThumbnail(_ photo: LiveDeviceBrowser.LivePhoto) {
+        // Skip videos and already-loaded/loading thumbnails
+        guard !photo.isVideo,
+              thumbnails[photo.id] == nil,
+              !thumbnailLoadingIDs.contains(photo.id) else { return }
+        // Limit concurrent thumbnail fetches to avoid overwhelming the device
+        guard thumbnailLoadingIDs.count < 4 else { return }
+
+        thumbnailLoadingIDs.insert(photo.id)
+        Task {
+            defer { thumbnailLoadingIDs.remove(photo.id) }
+            guard let path = (await liveBrowser.pullPhoto(photo, timeout: 20)).path else { return }
+            guard let img = NSImage(contentsOfFile: path) else { return }
+            thumbnails[photo.id] = img
         }
     }
 
