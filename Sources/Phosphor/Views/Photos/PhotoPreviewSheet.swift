@@ -1,6 +1,22 @@
 import SwiftUI
 import AVKit
 
+/// Wraps AVPlayerView (AppKit) to avoid _AVKit_SwiftUI ABI issues on macOS 15+.
+private struct PlayerView: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = player
+        view.controlsStyle = .inline
+        return view
+    }
+
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        nsView.player = player
+    }
+}
+
 /// In-app photo/video preview sheet for live device photos.
 struct PhotoPreviewSheet: View {
     let photo: LiveDeviceBrowser.LivePhoto
@@ -44,8 +60,7 @@ struct PhotoPreviewSheet: View {
         .frame(minWidth: 720, minHeight: 540)
         .task {
             guard localPath == nil, pullError == nil else { return }
-            let timeout: TimeInterval = photo.isVideo ? 300 : 60
-            let result = await browser.pullPhoto(photo, timeout: timeout)
+            let result = await browser.pullPhoto(photo, timeout: photo.isVideo ? 300 : 60)
             guard !Task.isCancelled else { return }
             if let path = result.path {
                 localPath = path
@@ -83,7 +98,7 @@ struct PhotoPreviewSheet: View {
     @ViewBuilder
     private var videoContent: some View {
         if let p = player {
-            VideoPlayer(player: p)
+            PlayerView(player: p)
         } else {
             loadingView
         }
