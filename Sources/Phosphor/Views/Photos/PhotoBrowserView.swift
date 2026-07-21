@@ -17,7 +17,7 @@ struct PhotoBrowserView: View {
     @State private var selectedDeviceAlbum: LiveDeviceBrowser.LiveAlbum?
     @State private var previewPhoto: LiveDeviceBrowser.LivePhoto?
     @State private var previewLocalPath: String?
-    @State private var isShowingPreview = false
+    @State private var previewError: String?
     @State private var deviceFilter: DeviceFilter = .all
 
     enum DeviceFilter { case all, photos, videos }
@@ -59,10 +59,12 @@ struct PhotoBrowserView: View {
         } message: {
             Text(photoVM.alertMessage)
         }
-        .sheet(isPresented: $isShowingPreview) {
-            PhotoPreviewSheet(photo: previewPhoto ?? LiveDeviceBrowser.LivePhoto(
-                id: "", name: "", path: "", size: 0, modified: nil, isVideo: false
-            ), localPath: $previewLocalPath)
+        .sheet(item: $previewPhoto) { photo in
+            PhotoPreviewSheet(
+                photo: photo,
+                localPath: $previewLocalPath,
+                pullError: $previewError
+            )
         }
     }
 
@@ -428,28 +430,10 @@ struct PhotoBrowserView: View {
                         .stroke(Color.brandAccent, lineWidth: 3)
                 }
 
-                // Selection checkbox (top-left) + video badge (bottom-right)
-                VStack {
-                    HStack {
-                        Button {
-                            toggleSelection(photo.id)
-                        } label: {
-                            Image(systemName: selectedItems.contains(photo.id)
-                                  ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 18))
-                                .foregroundStyle(selectedItems.contains(photo.id)
-                                                 ? Color.brandAccent : Color.white)
-                                .background(Circle().fill(
-                                    selectedItems.contains(photo.id)
-                                        ? Color.white : Color.black.opacity(0.3)
-                                ).padding(2))
-                        }
-                        .buttonStyle(.plain)
-                        .padding(4)
+                // Video badge (bottom-right)
+                if photo.isVideo {
+                    VStack {
                         Spacer()
-                    }
-                    Spacer()
-                    if photo.isVideo {
                         HStack {
                             Spacer()
                             HStack(spacing: 3) {
@@ -463,6 +447,25 @@ struct PhotoBrowserView: View {
                             .padding(4)
                         }
                     }
+                }
+
+                // Checkbox (top-left) — separate interaction from preview tap
+                VStack {
+                    HStack {
+                        Image(systemName: selectedItems.contains(photo.id)
+                              ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 18))
+                            .foregroundStyle(selectedItems.contains(photo.id)
+                                             ? Color.brandAccent : Color.white)
+                            .background(Circle().fill(
+                                selectedItems.contains(photo.id)
+                                    ? Color.white : Color.black.opacity(0.3)
+                            ).padding(2))
+                            .onTapGesture { toggleSelection(photo.id) }
+                            .padding(6)
+                        Spacer()
+                    }
+                    Spacer()
                 }
             }
             .frame(height: 100)
@@ -478,11 +481,15 @@ struct PhotoBrowserView: View {
     }
 
     private func openPreview(_ photo: LiveDeviceBrowser.LivePhoto) {
-        previewPhoto = photo
         previewLocalPath = nil
-        isShowingPreview = true
+        previewError = nil
+        previewPhoto = photo
         Task {
-            previewLocalPath = await liveBrowser.pullPhoto(photo)
+            if let path = await liveBrowser.pullPhoto(photo) {
+                previewLocalPath = path
+            } else {
+                previewError = "Could not download the file from device. Make sure the device is connected and pymobiledevice3 is installed."
+            }
         }
     }
 

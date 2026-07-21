@@ -173,10 +173,23 @@ final class LiveDeviceBrowser: ObservableObject {
         try? fm.createDirectory(atPath: tmpDir, withIntermediateDirectories: true)
 
         let localPath = (tmpDir as NSString).appendingPathComponent(uniqueLocalName(for: photo))
-        if fm.fileExists(atPath: localPath) { return localPath } // Already downloaded
+
+        // Only use cache if file is non-empty (a previous failed pull can leave a 0-byte file)
+        if fm.fileExists(atPath: localPath) {
+            let size = (try? fm.attributesOfItem(atPath: localPath))?[.size] as? Int ?? 0
+            if size > 0 { return localPath }
+            try? fm.removeItem(atPath: localPath) // remove stale empty file
+        }
 
         let success = await PyMobileDevice.afcPull(remotePath: photo.path, localPath: localPath, udid: udid)
-        return success ? localPath : nil
+
+        // Validate: reject empty files created by a failed pull
+        let pulledSize = (try? fm.attributesOfItem(atPath: localPath))?[.size] as? Int ?? 0
+        if !success || pulledSize == 0 {
+            try? fm.removeItem(atPath: localPath)
+            return nil
+        }
+        return localPath
     }
 
     /// Scan photos via ifuse mount (legacy).
@@ -239,15 +252,35 @@ final class LiveDeviceBrowser: ObservableObject {
         try fm.createDirectory(atPath: destDir, withIntermediateDirectories: true)
 
         if usesAFC {
-            // AFC mode: pull from device directly to destination
             guard let udid = deviceUDID else { throw CocoaError(.fileNoSuchFile) }
+
+            // Reuse cached preview file if already pulled and non-empty
+            let cachedPath = localCachePath(for: photo, udid: udid)
+            if fm.fileExists(atPath: cachedPath),
+               let attrs = try? fm.attributesOfItem(atPath: cachedPath),
+               (attrs[.size] as? Int ?? 0) > 0 {
+                if fm.fileExists(atPath: destination) { try fm.removeItem(atPath: destination) }
+                try fm.copyItem(atPath: cachedPath, toPath: destination)
+                return
+            }
+
+            // Pull directly to destination
             let success = await PyMobileDevice.afcPull(remotePath: photo.path, localPath: destination, udid: udid)
             if !success { throw CocoaError(.fileWriteUnknown) }
+
+            // Validate the exported file is non-empty
+            let size = (try? fm.attributesOfItem(atPath: destination))?[.size] as? Int ?? 0
+            if size == 0 { throw NSError(domain: "Phosphor", code: 1, userInfo: [NSLocalizedDescriptionKey: "Exported file is empty — try again or check device connection"]) }
         } else {
             // Mount mode: local copy
             if fm.fileExists(atPath: destination) { try fm.removeItem(atPath: destination) }
             try fm.copyItem(atPath: photo.path, toPath: destination)
         }
+    }
+
+    private func localCachePath(for photo: LivePhoto, udid: String) -> String {
+        let tmpDir = NSTemporaryDirectory() + "phosphor-photos-\(udid.prefix(8))"
+        return (tmpDir as NSString).appendingPathComponent(uniqueLocalName(for: photo))
     }
 
     func exportPhotos(_ selectedPhotos: [LivePhoto], to directory: String) async -> Int {

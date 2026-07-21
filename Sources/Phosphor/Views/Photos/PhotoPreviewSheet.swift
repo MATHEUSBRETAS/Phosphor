@@ -5,6 +5,7 @@ import AVKit
 struct PhotoPreviewSheet: View {
     let photo: LiveDeviceBrowser.LivePhoto
     @Binding var localPath: String?
+    @Binding var pullError: String?
     @Environment(\.dismiss) private var dismiss
     @State private var player: AVPlayer?
 
@@ -41,11 +42,10 @@ struct PhotoPreviewSheet: View {
         }
         .frame(minWidth: 720, minHeight: 540)
         .onChange(of: localPath) { _, newPath in
-            if photo.isVideo, let path = newPath {
-                let newPlayer = AVPlayer(url: URL(fileURLWithPath: path))
-                player = newPlayer
-                newPlayer.play()
-            }
+            guard photo.isVideo, let path = newPath else { return }
+            let p = AVPlayer(url: URL(fileURLWithPath: path))
+            player = p
+            p.play()
         }
         .onDisappear {
             player?.pause()
@@ -55,7 +55,9 @@ struct PhotoPreviewSheet: View {
 
     @ViewBuilder
     private var contentView: some View {
-        if let path = localPath {
+        if let error = pullError {
+            errorView(message: error)
+        } else if let path = localPath {
             if photo.isVideo {
                 videoView(path: path)
             } else if let image = NSImage(contentsOfFile: path) {
@@ -64,7 +66,7 @@ struct PhotoPreviewSheet: View {
                     .aspectRatio(contentMode: .fit)
                     .padding(16)
             } else {
-                unpreviewableView(path: path)
+                errorView(message: "Cannot display this file type.")
             }
         } else {
             loadingView
@@ -76,7 +78,6 @@ struct PhotoPreviewSheet: View {
         if let player = player {
             VideoPlayer(player: player)
         } else {
-            // Player not ready yet — show loading briefly
             loadingView
                 .onAppear {
                     let p = AVPlayer(url: URL(fileURLWithPath: path))
@@ -92,22 +93,25 @@ struct PhotoPreviewSheet: View {
             Text("Downloading from device…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+            Text("This may take a moment on large files.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
     }
 
-    private func unpreviewableView(path: String) -> some View {
+    private func errorView(message: String) -> some View {
         VStack(spacing: 16) {
-            Image(systemName: "doc.questionmark")
-                .font(.system(size: 56))
-                .foregroundStyle(.secondary)
-            Text("Cannot preview this file")
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 48))
+                .foregroundStyle(.orange)
+            Text("Could not load preview")
                 .font(.headline)
-            Button {
-                NSWorkspace.shared.open(URL(fileURLWithPath: path))
-            } label: {
-                Label("Open in Default App", systemImage: "arrow.up.right.square")
-            }
-            .buttonStyle(.borderedProminent)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
         }
+        .padding(32)
     }
 }
