@@ -166,30 +166,39 @@ final class LiveDeviceBrowser: ObservableObject {
     }
 
     /// Pull a single photo from device to local temp for viewing/export.
-    func pullPhoto(_ photo: LivePhoto) async -> String? {
-        guard let udid = deviceUDID else { return nil }
+    /// Returns (localPath, errorMessage) — exactly one will be non-nil.
+    func pullPhoto(_ photo: LivePhoto, timeout: TimeInterval = 60) async -> (path: String?, error: String?) {
+        guard let udid = deviceUDID else {
+            return (nil, "Device disconnected. Reconnect and try again.")
+        }
         let tmpDir = NSTemporaryDirectory() + "phosphor-photos-\(udid.prefix(8))"
         let fm = FileManager.default
         try? fm.createDirectory(atPath: tmpDir, withIntermediateDirectories: true)
 
         let localPath = (tmpDir as NSString).appendingPathComponent(uniqueLocalName(for: photo))
 
-        // Only use cache if file is non-empty (a previous failed pull can leave a 0-byte file)
+        // Only use cache if file is non-empty
         if fm.fileExists(atPath: localPath) {
             let size = (try? fm.attributesOfItem(atPath: localPath))?[.size] as? Int ?? 0
-            if size > 0 { return localPath }
-            try? fm.removeItem(atPath: localPath) // remove stale empty file
-        }
-
-        let success = await PyMobileDevice.afcPull(remotePath: photo.path, localPath: localPath, udid: udid)
-
-        // Validate: reject empty files created by a failed pull
-        let pulledSize = (try? fm.attributesOfItem(atPath: localPath))?[.size] as? Int ?? 0
-        if !success || pulledSize == 0 {
+            if size > 0 { return (localPath, nil) }
             try? fm.removeItem(atPath: localPath)
-            return nil
         }
-        return localPath
+
+        let args = ["afc", "pull", photo.path, localPath, "--udid", udid]
+        let result = await PyMobileDevice.runAsync(args, timeout: timeout)
+
+        let pulledSize = (try? fm.attributesOfItem(atPath: localPath))?[.size] as? Int ?? 0
+        if !result.succeeded || pulledSize == 0 {
+            try? fm.removeItem(atPath: localPath)
+            let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let needsTunnel = stderr.lowercased().contains("tunnel") || stderr.lowercased().contains("lockdown")
+                || stderr.lowercased().contains("timeout") || stderr.isEmpty
+            if needsTunnel {
+                return (nil, "Could not connect to device.\n\nOn iOS 17+, open Terminal and run:\n\nsudo pymobiledevice3 remote tunneld\n\nKeep it running, then try again.")
+            }
+            return (nil, "Download failed.\n\n\(stderr.isEmpty ? "Make sure the device is connected and unlocked." : stderr)")
+        }
+        return (localPath, nil)
     }
 
     /// Scan photos via ifuse mount (legacy).

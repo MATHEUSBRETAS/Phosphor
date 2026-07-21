@@ -46,7 +46,8 @@ struct PhotoPreviewSheet: View {
         .frame(minWidth: 720, minHeight: 540)
         .task {
             guard localPath == nil && pullError == nil else { return }
-            if let path = await browser.pullPhoto(photo) {
+            let result = await browser.pullPhoto(photo, timeout: 30)
+            if let path = result.path {
                 localPath = path
                 if photo.isVideo {
                     let p = AVPlayer(url: URL(fileURLWithPath: path))
@@ -54,7 +55,7 @@ struct PhotoPreviewSheet: View {
                     p.play()
                 }
             } else {
-                pullError = "Could not download from device.\n\nMake sure your iPhone is unlocked, trusted, and pymobiledevice3 is installed.\n\nOn iOS 17+, you may need to run:\nsudo pymobiledevice3 remote tunneld"
+                pullError = result.error ?? "Unknown error."
             }
         }
         .onDisappear {
