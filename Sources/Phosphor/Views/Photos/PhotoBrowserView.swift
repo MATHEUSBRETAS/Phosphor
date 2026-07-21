@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreGraphics
 
 /// Browse and extract photos/videos from backup Camera Roll OR directly from connected device.
 struct PhotoBrowserView: View {
@@ -476,14 +477,26 @@ struct PhotoBrowserView: View {
               thumbnails[photo.id] == nil,
               !thumbnailLoadingIDs.contains(photo.id) else { return }
         // Limit concurrent thumbnail fetches to avoid overwhelming the device
-        guard thumbnailLoadingIDs.count < 4 else { return }
+        guard thumbnailLoadingIDs.count < 3 else { return }
 
         thumbnailLoadingIDs.insert(photo.id)
         Task {
             defer { thumbnailLoadingIDs.remove(photo.id) }
             guard let path = (await liveBrowser.pullPhoto(photo, timeout: 20)).path else { return }
-            guard let img = NSImage(contentsOfFile: path) else { return }
-            thumbnails[photo.id] = img
+            guard !Task.isCancelled else { return }
+            // Use CGImageSource to decode only the embedded thumbnail (~KB, not full 4K image)
+            let url = URL(fileURLWithPath: path) as CFURL
+            let opts = [kCGImageSourceShouldCache: false] as CFDictionary
+            guard let src = CGImageSourceCreateWithURL(url, opts) else { return }
+            let thumbOpts: [CFString: Any] = [
+                kCGImageSourceThumbnailMaxPixelSize: 320,
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: false
+            ]
+            guard let cgThumb = CGImageSourceCreateThumbnailAtIndex(src, 0, thumbOpts as CFDictionary) else { return }
+            let thumb = NSImage(cgImage: cgThumb, size: NSSize(width: cgThumb.width, height: cgThumb.height))
+            thumbnails[photo.id] = thumb
         }
     }
 
