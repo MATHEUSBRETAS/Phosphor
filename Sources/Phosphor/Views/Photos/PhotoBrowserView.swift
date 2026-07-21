@@ -13,6 +13,8 @@ struct PhotoBrowserView: View {
     @State private var sourceMode: SourceMode = .device
     @State private var browseMode: BrowseMode = .byType
     @State private var selectedAlbum: PhotoAlbum?
+    @State private var deviceBrowseMode: BrowseMode = .byType
+    @State private var selectedDeviceAlbum: LiveDeviceBrowser.LiveAlbum?
 
     enum ViewMode { case grid, list }
     enum SourceMode: String, CaseIterable {
@@ -141,11 +143,199 @@ struct PhotoBrowserView: View {
                     actionLabel: "Scan Again"
                 )
             } else {
-                switch viewMode {
-                case .grid: liveGridView
-                case .list: liveListView
+                deviceContentView
+            }
+        }
+    }
+
+    private var deviceContentView: some View {
+        VStack(spacing: 0) {
+            // Browse mode picker + back button
+            HStack(spacing: 0) {
+                Picker("Browse Mode", selection: $deviceBrowseMode) {
+                    Text("By Type").tag(BrowseMode.byType)
+                    Text("By Album").tag(BrowseMode.byAlbum)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+                .padding(.leading, 16)
+
+                Spacer()
+
+                if deviceBrowseMode == .byAlbum && selectedDeviceAlbum != nil {
+                    Button {
+                        selectedDeviceAlbum = nil
+                        selectedItems.removeAll()
+                    } label: {
+                        Label("All Albums", systemImage: "chevron.left")
+                            .font(.system(size: 13))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.brandAccent)
+                    .padding(.trailing, 16)
                 }
             }
+            .padding(.vertical, 10)
+
+            Divider()
+
+            // Album breadcrumb
+            if deviceBrowseMode == .byAlbum, let album = selectedDeviceAlbum {
+                HStack(spacing: 8) {
+                    Image(systemName: album.kind.sfSymbol)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    Text(album.title)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("·").foregroundStyle(.tertiary)
+                    Text("\(album.photoCount) items")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                Divider()
+            }
+
+            deviceBodyView
+        }
+        .onChange(of: deviceBrowseMode) { _, _ in
+            selectedDeviceAlbum = nil
+            selectedItems.removeAll()
+            if deviceBrowseMode == .byAlbum && liveBrowser.albums.isEmpty {
+                Task { await liveBrowser.scanAlbums() }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var deviceBodyView: some View {
+        switch deviceBrowseMode {
+        case .byType:
+            liveMediaView
+        case .byAlbum:
+            deviceAlbumBrowseView
+        }
+    }
+
+    @ViewBuilder
+    private var liveMediaView: some View {
+        switch viewMode {
+        case .grid: liveGridView
+        case .list: liveListView
+        }
+    }
+
+    @ViewBuilder
+    private var deviceAlbumBrowseView: some View {
+        if liveBrowser.albumsLoading {
+            LoadingOverlay(message: "Loading albums from device…")
+        } else if let album = selectedDeviceAlbum {
+            liveAlbumDetailView(album)
+        } else {
+            deviceAlbumGridView
+        }
+    }
+
+    private var deviceAlbumGridView: some View {
+        Group {
+            if liveBrowser.albums.isEmpty {
+                EmptyStateView(
+                    icon: "rectangle.stack",
+                    title: "No Albums Found",
+                    subtitle: "Could not read Photos.sqlite from device. Make sure pymobiledevice3 is installed."
+                )
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 12)], spacing: 12) {
+                        ForEach(liveBrowser.albums) { album in
+                            deviceAlbumCard(album)
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+    }
+
+    private func deviceAlbumCard(_ album: LiveDeviceBrowser.LiveAlbum) -> some View {
+        Button {
+            selectedDeviceAlbum = album
+            selectedItems.removeAll()
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(.controlBackgroundColor))
+                        .frame(height: 110)
+                    Image(systemName: album.kind.sfSymbol)
+                        .font(.system(size: 32))
+                        .foregroundStyle(.tertiary)
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            let videos = album.photos.filter { $0.isVideo }.count
+                            if videos > 0 {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "video.fill").font(.system(size: 8))
+                                    Text("\(videos)").font(.system(size: 9, weight: .medium))
+                                }
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 3)
+                                .background(.black.opacity(0.55))
+                                .clipShape(Capsule())
+                                .padding(6)
+                            }
+                        }
+                    }
+                }
+                .frame(height: 110)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(album.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                    Text("\(album.photoCount) items")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func liveAlbumDetailView(_ album: LiveDeviceBrowser.LiveAlbum) -> some View {
+        switch viewMode {
+        case .grid:
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 120, maximum: 160), spacing: 8)], spacing: 8) {
+                    ForEach(album.photos) { photo in livePhotoCell(photo) }
+                }
+                .padding(16)
+            }
+        case .list:
+            List(album.photos) { photo in
+                HStack(spacing: 10) {
+                    Image(systemName: photo.sfSymbol)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, height: 40)
+                        .background(Color(.controlBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                    Text(photo.name).font(.system(size: 13)).lineLimit(1)
+                    Spacer()
+                    Text(photo.sizeString)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 2)
+            }
+            .listStyle(.inset)
         }
     }
 
@@ -590,11 +780,18 @@ struct PhotoBrowserView: View {
         panel.prompt = "Extract Here"
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        let sourcePhotos: [LiveDeviceBrowser.LivePhoto]
+        if deviceBrowseMode == .byAlbum, let album = selectedDeviceAlbum {
+            sourcePhotos = album.photos
+        } else {
+            sourcePhotos = liveBrowser.photos
+        }
+
         let photosToExtract: [LiveDeviceBrowser.LivePhoto]
         if selectedItems.isEmpty {
-            photosToExtract = liveBrowser.photos
+            photosToExtract = sourcePhotos
         } else {
-            photosToExtract = liveBrowser.photos.filter { selectedItems.contains($0.id) }
+            photosToExtract = sourcePhotos.filter { selectedItems.contains($0.id) }
         }
         Task {
             let count = await liveBrowser.exportPhotos(photosToExtract, to: url.path)

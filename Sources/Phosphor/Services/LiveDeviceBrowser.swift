@@ -6,7 +6,9 @@ import Foundation
 final class LiveDeviceBrowser: ObservableObject {
 
     @Published var photos: [LivePhoto] = []
+    @Published var albums: [LiveAlbum] = []
     @Published var isLoading = false
+    @Published var albumsLoading = false
     @Published var isMounted = false
     @Published var lastError: String?
     @Published var mountPath: String?
@@ -15,6 +17,19 @@ final class LiveDeviceBrowser: ObservableObject {
     private var deviceUDID: String?
     private var usesAFC = false
     private var cachedDCIMFolders: [String] = []
+
+    struct LiveAlbum: Identifiable, Hashable {
+        let id: Int
+        let title: String
+        let kind: PhotoAlbum.Kind
+        let photos: [LivePhoto]
+
+        var photoCount: Int { photos.count }
+        var thumbnailPhoto: LivePhoto? { photos.first }
+
+        func hash(into hasher: inout Hasher) { hasher.combine(id) }
+        static func == (lhs: LiveAlbum, rhs: LiveAlbum) -> Bool { lhs.id == rhs.id }
+    }
 
     struct LivePhoto: Identifiable, Hashable {
         let id: String
@@ -252,6 +267,119 @@ final class LiveDeviceBrowser: ObservableObject {
             "--setProperty", "format", "jpeg", inputPath, "--out", outputPath
         ])
         return result.succeeded
+    }
+
+    // MARK: - Album Scanning
+
+    /// Pull Photos.sqlite from the device and parse album structure.
+    /// Requires photos to be scanned first so assets can be correlated.
+    func scanAlbums() async {
+        guard isMounted, let udid = deviceUDID else { return }
+        albumsLoading = true
+
+        let tmpDir = NSTemporaryDirectory() + "phosphor-photos-\(udid.prefix(8))"
+        let tempPath = (tmpDir as NSString).appendingPathComponent("Photos.sqlite")
+        let fm = FileManager.default
+        try? fm.createDirectory(atPath: tmpDir, withIntermediateDirectories: true)
+
+        var dbPath: String?
+
+        if usesAFC {
+            // Pull Photos.sqlite from device via AFC (/PhotoData/Photos.sqlite = Media root)
+            let ok = await PyMobileDevice.afcPull(
+                remotePath: "/PhotoData/Photos.sqlite",
+                localPath: tempPath,
+                udid: udid
+            )
+            if ok { dbPath = tempPath }
+        } else if let mount = mountPath {
+            let src = (mount as NSString).appendingPathComponent("PhotoData/Photos.sqlite")
+            if fm.fileExists(atPath: src) {
+                try? fm.copyItem(atPath: src, toPath: tempPath)
+                dbPath = tempPath
+            }
+        }
+
+        guard let path = dbPath else {
+            albumsLoading = false
+            return
+        }
+
+        albums = (try? Self.parseDeviceAlbums(dbPath: path, photos: photos)) ?? []
+        albumsLoading = false
+    }
+
+    private struct JunctionInfo {
+        let tableName: String
+        let albumColumn: String
+        let assetColumn: String
+    }
+
+    private static func parseDeviceAlbums(dbPath: String, photos: [LivePhoto]) throws -> [LiveAlbum] {
+        let db = try SQLiteReader(path: dbPath)
+
+        // Build lookups: photo.path is "/DCIM/<dir>/<file>" in AFC mode
+        var byPath: [String: LivePhoto] = [:]
+        var byFilename: [String: LivePhoto] = [:]
+        for photo in photos {
+            byPath[photo.path.lowercased()] = photo
+            if byFilename[photo.name.lowercased()] == nil {
+                byFilename[photo.name.lowercased()] = photo
+            }
+        }
+
+        guard let junction = try findJunctionTable(in: db) else { return [] }
+
+        let albumRows = try db.query(
+            "SELECT Z_PK, ZTITLE, ZKIND FROM ZGENERICALBUM WHERE ZTITLE IS NOT NULL AND ZTITLE != '' ORDER BY ZTITLE"
+        )
+
+        var result: [LiveAlbum] = []
+        for albumRow in albumRows {
+            guard let pk = albumRow["Z_PK"] as? Int,
+                  let title = albumRow["ZTITLE"] as? String else { continue }
+            let kindInt = (albumRow["ZKIND"] as? Int) ?? 2
+            let kind: PhotoAlbum.Kind = kindInt >= 1500 ? .smart : .regular
+
+            let sql = """
+                SELECT a.ZDIRECTORY, a.ZFILENAME
+                FROM ZASSET a
+                JOIN \(junction.tableName) j ON a.Z_PK = j.\(junction.assetColumn)
+                WHERE j.\(junction.albumColumn) = \(pk)
+                ORDER BY a.ZDATECREATED
+                """
+            let assetRows = (try? db.query(sql)) ?? []
+
+            var albumPhotos: [LivePhoto] = []
+            for assetRow in assetRows {
+                guard let filename = assetRow["ZFILENAME"] as? String else { continue }
+                if let dir = assetRow["ZDIRECTORY"] as? String,
+                   let photo = byPath["/dcim/\(dir.lowercased())/\(filename.lowercased())"] {
+                    albumPhotos.append(photo)
+                } else if let photo = byFilename[filename.lowercased()] {
+                    albumPhotos.append(photo)
+                }
+            }
+
+            guard !albumPhotos.isEmpty else { continue }
+            result.append(LiveAlbum(id: pk, title: title, kind: kind, photos: albumPhotos))
+        }
+
+        return result
+    }
+
+    private static func findJunctionTable(in db: SQLiteReader) throws -> JunctionInfo? {
+        let tableRows = try db.query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Z_%ASSETS' AND name NOT LIKE 'Z_META%'"
+        )
+        for tableRow in tableRows {
+            guard let name = tableRow["name"] as? String else { continue }
+            let colNames = (try? db.columns(for: name))?.map { $0.name } ?? []
+            guard let albumCol = colNames.first(where: { $0.hasSuffix("ALBUMS") }),
+                  let assetCol = colNames.first(where: { $0.hasSuffix("ASSETS") }) else { continue }
+            return JunctionInfo(tableName: name, albumColumn: albumCol, assetColumn: assetCol)
+        }
+        return nil
     }
 
     // MARK: - General File Listing
