@@ -16,8 +16,6 @@ struct PhotoBrowserView: View {
     @State private var deviceBrowseMode: BrowseMode = .byType
     @State private var selectedDeviceAlbum: LiveDeviceBrowser.LiveAlbum?
     @State private var previewPhoto: LiveDeviceBrowser.LivePhoto?
-    @State private var previewLocalPath: String?
-    @State private var previewError: String?
     @State private var deviceFilter: DeviceFilter = .all
 
     enum DeviceFilter { case all, photos, videos }
@@ -60,11 +58,7 @@ struct PhotoBrowserView: View {
             Text(photoVM.alertMessage)
         }
         .sheet(item: $previewPhoto) { photo in
-            PhotoPreviewSheet(
-                photo: photo,
-                localPath: $previewLocalPath,
-                pullError: $previewError
-            )
+            PhotoPreviewSheet(photo: photo, browser: liveBrowser)
         }
     }
 
@@ -481,16 +475,7 @@ struct PhotoBrowserView: View {
     }
 
     private func openPreview(_ photo: LiveDeviceBrowser.LivePhoto) {
-        previewLocalPath = nil
-        previewError = nil
         previewPhoto = photo
-        Task {
-            if let path = await liveBrowser.pullPhoto(photo) {
-                previewLocalPath = path
-            } else {
-                previewError = "Could not download the file from device. Make sure the device is connected and pymobiledevice3 is installed."
-            }
-        }
     }
 
     private var liveListView: some View {

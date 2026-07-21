@@ -2,11 +2,14 @@ import SwiftUI
 import AVKit
 
 /// In-app photo/video preview sheet for live device photos.
+/// Self-contained: pulls the file from device internally via .task{}.
 struct PhotoPreviewSheet: View {
     let photo: LiveDeviceBrowser.LivePhoto
-    @Binding var localPath: String?
-    @Binding var pullError: String?
+    let browser: LiveDeviceBrowser
+
     @Environment(\.dismiss) private var dismiss
+    @State private var localPath: String?
+    @State private var pullError: String?
     @State private var player: AVPlayer?
 
     var body: some View {
@@ -41,11 +44,18 @@ struct PhotoPreviewSheet: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 720, minHeight: 540)
-        .onChange(of: localPath) { _, newPath in
-            guard photo.isVideo, let path = newPath else { return }
-            let p = AVPlayer(url: URL(fileURLWithPath: path))
-            player = p
-            p.play()
+        .task {
+            guard localPath == nil && pullError == nil else { return }
+            if let path = await browser.pullPhoto(photo) {
+                localPath = path
+                if photo.isVideo {
+                    let p = AVPlayer(url: URL(fileURLWithPath: path))
+                    player = p
+                    p.play()
+                }
+            } else {
+                pullError = "Could not download from device.\n\nMake sure your iPhone is unlocked, trusted, and pymobiledevice3 is installed.\n\nOn iOS 17+, you may need to run:\nsudo pymobiledevice3 remote tunneld"
+            }
         }
         .onDisappear {
             player?.pause()
@@ -60,13 +70,8 @@ struct PhotoPreviewSheet: View {
         } else if let path = localPath {
             if photo.isVideo {
                 videoView(path: path)
-            } else if let image = NSImage(contentsOfFile: path) {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .padding(16)
             } else {
-                errorView(message: "Cannot display this file type.")
+                imageView(path: path)
             }
         } else {
             loadingView
@@ -74,16 +79,23 @@ struct PhotoPreviewSheet: View {
     }
 
     @ViewBuilder
+    private func imageView(path: String) -> some View {
+        if let image = NSImage(contentsOfFile: path) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .padding(16)
+        } else {
+            errorView(message: "Cannot display this image.\nFile may be in an unsupported format (e.g. HEIC requires macOS conversion).")
+        }
+    }
+
+    @ViewBuilder
     private func videoView(path: String) -> some View {
-        if let player = player {
-            VideoPlayer(player: player)
+        if let p = player {
+            VideoPlayer(player: p)
         } else {
             loadingView
-                .onAppear {
-                    let p = AVPlayer(url: URL(fileURLWithPath: path))
-                    self.player = p
-                    p.play()
-                }
         }
     }
 
@@ -110,7 +122,7 @@ struct PhotoPreviewSheet: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 400)
+                .frame(maxWidth: 440)
         }
         .padding(32)
     }
