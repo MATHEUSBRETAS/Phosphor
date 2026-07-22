@@ -401,13 +401,16 @@ struct PhotoBrowserView: View {
                     .fill(Color(.controlBackgroundColor))
                     .frame(height: 100)
 
-                // Thumbnail or placeholder
+                // Thumbnail, loading spinner, or placeholder
                 if let thumb = thumbnails[photo.id] {
                     Image(nsImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(height: 100)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else if thumbnailLoadingIDs.contains(photo.id) {
+                    ProgressView()
+                        .scaleEffect(0.8)
                 } else {
                     VStack(spacing: 4) {
                         Image(systemName: photo.isVideo ? "video.fill" : "photo")
@@ -476,68 +479,66 @@ struct PhotoBrowserView: View {
     private func loadThumbnail(_ photo: LiveDeviceBrowser.LivePhoto) {
         guard thumbnails[photo.id] == nil,
               !thumbnailLoadingIDs.contains(photo.id),
+              !thumbnailQueue.contains(where: { $0.id == photo.id }),
               previewPhoto == nil else { return }
 
-        // For videos: only generate thumbnail from already-cached file
-        if photo.isVideo {
-            if let path = liveBrowser.cachedPath(for: photo) {
-                startVideoThumbnail(photo, localPath: path)
-            }
-            return
-        }
-
-        // Photos: queue if at concurrency limit
         if thumbnailLoadingIDs.count < 3 {
-            startPhotoThumbnail(photo)
-        } else if !thumbnailQueue.contains(where: { $0.id == photo.id }) {
+            startThumbnailLoad(photo)
+        } else {
             thumbnailQueue.append(photo)
         }
     }
 
-    private func startPhotoThumbnail(_ photo: LiveDeviceBrowser.LivePhoto) {
+    private func startThumbnailLoad(_ photo: LiveDeviceBrowser.LivePhoto) {
         thumbnailLoadingIDs.insert(photo.id)
         Task {
             defer {
                 thumbnailLoadingIDs.remove(photo.id)
-                // Dequeue next pending thumbnail
                 while !thumbnailQueue.isEmpty {
                     let next = thumbnailQueue.removeFirst()
                     if thumbnails[next.id] == nil && !thumbnailLoadingIDs.contains(next.id) {
-                        startPhotoThumbnail(next)
+                        startThumbnailLoad(next)
                         break
                     }
                 }
             }
-            guard let path = (await liveBrowser.pullPhoto(photo, timeout: 20)).path else { return }
-            guard !Task.isCancelled else { return }
-            let cfURL = URL(fileURLWithPath: path) as CFURL
-            guard let src = CGImageSourceCreateWithURL(cfURL, nil) else { return }
-            let thumbOpts: [CFString: Any] = [
-                kCGImageSourceThumbnailMaxPixelSize: 300,
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true
-            ]
-            guard let cgThumb = CGImageSourceCreateThumbnailAtIndex(src, 0, thumbOpts as CFDictionary) else { return }
-            thumbnails[photo.id] = NSImage(cgImage: cgThumb,
-                                           size: NSSize(width: CGFloat(cgThumb.width), height: CGFloat(cgThumb.height)))
-        }
-    }
 
-    private func startVideoThumbnail(_ photo: LiveDeviceBrowser.LivePhoto, localPath: String) {
-        thumbnailLoadingIDs.insert(photo.id)
-        Task {
-            defer { thumbnailLoadingIDs.remove(photo.id) }
-            let url = URL(fileURLWithPath: localPath)
-            let thumb = await Task.detached(priority: .utility) {
-                let asset = AVURLAsset(url: url)
-                let gen = AVAssetImageGenerator(asset: asset)
-                gen.appliesPreferredTrackTransform = true
-                gen.maximumSize = CGSize(width: 300, height: 300)
-                guard let cgImg = try? gen.copyCGImage(at: .zero, actualTime: nil) else { return nil as NSImage? }
-                return NSImage(cgImage: cgImg, size: .zero)
-            }.value
-            guard let thumb, !Task.isCancelled else { return }
-            thumbnails[photo.id] = thumb
+            // Use cached file if available, otherwise download
+            let localPath: String?
+            if let cached = liveBrowser.cachedPath(for: photo) {
+                localPath = cached
+            } else {
+                let timeout: TimeInterval = photo.isVideo ? 60 : 20
+                localPath = (await liveBrowser.pullPhoto(photo, timeout: timeout)).path
+            }
+
+            guard let path = localPath, !Task.isCancelled else { return }
+
+            if photo.isVideo {
+                // Generate thumbnail from first frame off main thread
+                let url = URL(fileURLWithPath: path)
+                let thumb = await Task.detached(priority: .utility) {
+                    let asset = AVURLAsset(url: url)
+                    let gen = AVAssetImageGenerator(asset: asset)
+                    gen.appliesPreferredTrackTransform = true
+                    gen.maximumSize = CGSize(width: 300, height: 300)
+                    guard let cgImg = try? gen.copyCGImage(at: .zero, actualTime: nil) else { return nil as NSImage? }
+                    return NSImage(cgImage: cgImg, size: .zero)
+                }.value
+                guard let thumb, !Task.isCancelled else { return }
+                thumbnails[photo.id] = thumb
+            } else {
+                let cfURL = URL(fileURLWithPath: path) as CFURL
+                guard let src = CGImageSourceCreateWithURL(cfURL, nil) else { return }
+                let opts: [CFString: Any] = [
+                    kCGImageSourceThumbnailMaxPixelSize: 300,
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true
+                ]
+                guard let cgThumb = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return }
+                thumbnails[photo.id] = NSImage(cgImage: cgThumb,
+                                               size: NSSize(width: CGFloat(cgThumb.width), height: CGFloat(cgThumb.height)))
+            }
         }
     }
 
