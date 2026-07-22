@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreGraphics
+import AVFoundation
 
 /// Browse and extract photos/videos from backup Camera Roll OR directly from connected device.
 struct PhotoBrowserView: View {
@@ -20,6 +21,7 @@ struct PhotoBrowserView: View {
     @State private var deviceFilter: DeviceFilter = .all
     @State private var thumbnails: [String: NSImage] = [:]
     @State private var thumbnailLoadingIDs: Set<String> = []
+    @State private var thumbnailQueue: [LiveDeviceBrowser.LivePhoto] = []
 
     enum DeviceFilter { case all, photos, videos }
 
@@ -472,17 +474,40 @@ struct PhotoBrowserView: View {
     }
 
     private func loadThumbnail(_ photo: LiveDeviceBrowser.LivePhoto) {
-        // Skip videos, already-loaded, already-loading, and when a preview is open
-        guard !photo.isVideo,
-              thumbnails[photo.id] == nil,
+        guard thumbnails[photo.id] == nil,
               !thumbnailLoadingIDs.contains(photo.id),
               previewPhoto == nil else { return }
-        // Limit to 3 concurrent AFC pulls
-        guard thumbnailLoadingIDs.count < 3 else { return }
 
+        // For videos: only generate thumbnail from already-cached file
+        if photo.isVideo {
+            if let path = liveBrowser.cachedPath(for: photo) {
+                startVideoThumbnail(photo, localPath: path)
+            }
+            return
+        }
+
+        // Photos: queue if at concurrency limit
+        if thumbnailLoadingIDs.count < 3 {
+            startPhotoThumbnail(photo)
+        } else if !thumbnailQueue.contains(where: { $0.id == photo.id }) {
+            thumbnailQueue.append(photo)
+        }
+    }
+
+    private func startPhotoThumbnail(_ photo: LiveDeviceBrowser.LivePhoto) {
         thumbnailLoadingIDs.insert(photo.id)
         Task {
-            defer { thumbnailLoadingIDs.remove(photo.id) }
+            defer {
+                thumbnailLoadingIDs.remove(photo.id)
+                // Dequeue next pending thumbnail
+                while !thumbnailQueue.isEmpty {
+                    let next = thumbnailQueue.removeFirst()
+                    if thumbnails[next.id] == nil && !thumbnailLoadingIDs.contains(next.id) {
+                        startPhotoThumbnail(next)
+                        break
+                    }
+                }
+            }
             guard let path = (await liveBrowser.pullPhoto(photo, timeout: 20)).path else { return }
             guard !Task.isCancelled else { return }
             let cfURL = URL(fileURLWithPath: path) as CFURL
@@ -493,8 +518,25 @@ struct PhotoBrowserView: View {
                 kCGImageSourceCreateThumbnailWithTransform: true
             ]
             guard let cgThumb = CGImageSourceCreateThumbnailAtIndex(src, 0, thumbOpts as CFDictionary) else { return }
-            let thumb = NSImage(cgImage: cgThumb,
-                                size: NSSize(width: CGFloat(cgThumb.width), height: CGFloat(cgThumb.height)))
+            thumbnails[photo.id] = NSImage(cgImage: cgThumb,
+                                           size: NSSize(width: CGFloat(cgThumb.width), height: CGFloat(cgThumb.height)))
+        }
+    }
+
+    private func startVideoThumbnail(_ photo: LiveDeviceBrowser.LivePhoto, localPath: String) {
+        thumbnailLoadingIDs.insert(photo.id)
+        Task {
+            defer { thumbnailLoadingIDs.remove(photo.id) }
+            let url = URL(fileURLWithPath: localPath)
+            let thumb = await Task.detached(priority: .utility) {
+                let asset = AVURLAsset(url: url)
+                let gen = AVAssetImageGenerator(asset: asset)
+                gen.appliesPreferredTrackTransform = true
+                gen.maximumSize = CGSize(width: 300, height: 300)
+                guard let cgImg = try? gen.copyCGImage(at: .zero, actualTime: nil) else { return nil as NSImage? }
+                return NSImage(cgImage: cgImg, size: .zero)
+            }.value
+            guard let thumb, !Task.isCancelled else { return }
             thumbnails[photo.id] = thumb
         }
     }

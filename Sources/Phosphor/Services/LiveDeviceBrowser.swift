@@ -287,6 +287,14 @@ final class LiveDeviceBrowser: ObservableObject {
         }
     }
 
+    /// Returns the local cache path if the file has already been downloaded and is non-empty.
+    func cachedPath(for photo: LivePhoto) -> String? {
+        guard let udid = deviceUDID else { return nil }
+        let path = localCachePath(for: photo, udid: udid)
+        let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int ?? 0
+        return size > 0 ? path : nil
+    }
+
     private func localCachePath(for photo: LivePhoto, udid: String) -> String {
         let tmpDir = NSTemporaryDirectory() + "phosphor-photos-\(udid.prefix(8))"
         return (tmpDir as NSString).appendingPathComponent(uniqueLocalName(for: photo))
