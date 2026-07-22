@@ -9,6 +9,7 @@ struct PhotoBrowserView: View {
     @EnvironmentObject var backupVM: BackupViewModel
     @StateObject private var photoVM = PhotoViewModel()
     @StateObject private var liveBrowser = LiveDeviceBrowser()
+    @StateObject private var tunneld = TunneldManager()
     @State private var selectedItems: Set<String> = []
     @State private var filterType: MediaItem.MediaType?
     @State private var viewMode: ViewMode = .grid
@@ -55,6 +56,16 @@ struct PhotoBrowserView: View {
             }
             if let backup = backupVM.selectedBackup {
                 Task { await photoVM.loadPhotos(from: backup.path) }
+            }
+        }
+        .onChange(of: liveBrowser.isMounted) { _, mounted in
+            if mounted {
+                Task {
+                    await tunneld.checkStatus()
+                    tunneld.startMonitoring()
+                }
+            } else {
+                tunneld.stopMonitoring()
             }
         }
         .alert("Photos", isPresented: $photoVM.showAlert) {
@@ -160,8 +171,78 @@ struct PhotoBrowserView: View {
         }
     }
 
+    @ViewBuilder
+    private var tunneldBanner: some View {
+        switch tunneld.state {
+        case .stopped:
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("iOS 17+ requires a background service to transfer files.")
+                        .font(.system(size: 12))
+                    Spacer()
+                    Button("Start Service") { Task { await tunneld.start() } }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.brandAccent)
+                        .font(.system(size: 12))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.orange.opacity(0.1))
+                Divider()
+            }
+        case .starting, .checking:
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    ProgressView().scaleEffect(0.7)
+                    Text(tunneld.state == .starting ? "Starting iOS service…" : "Checking iOS service…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                Divider()
+            }
+        case .failed(let msg):
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                    Text(msg)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Spacer()
+                    Button("Retry") { Task { await tunneld.start() } }
+                        .buttonStyle(.bordered)
+                        .font(.system(size: 12))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.red.opacity(0.07))
+                Divider()
+            }
+        case .running:
+            HStack(spacing: 6) {
+                Circle().fill(Color.green).frame(width: 7, height: 7)
+                Text("iOS Service Running")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 5)
+            .background(Color.green.opacity(0.05))
+        case .unknown:
+            EmptyView()
+        }
+    }
+
     private var deviceContentView: some View {
         VStack(spacing: 0) {
+            tunneldBanner
+
             // Browse mode picker + back button
             HStack(spacing: 0) {
                 Picker("Browse Mode", selection: $deviceBrowseMode) {
