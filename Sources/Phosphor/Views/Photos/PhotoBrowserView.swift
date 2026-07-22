@@ -503,14 +503,9 @@ struct PhotoBrowserView: View {
                 }
             }
 
-            // Use cached file if available, otherwise download
-            let localPath: String?
-            if let cached = liveBrowser.cachedPath(for: photo) {
-                localPath = cached
-            } else {
-                let timeout: TimeInterval = photo.isVideo ? 60 : 20
-                localPath = (await liveBrowser.pullPhoto(photo, timeout: timeout)).path
-            }
+            // Download into the separate thumbnail cache (never conflicts with preview downloads)
+            let timeout: TimeInterval = photo.isVideo ? 60 : 20
+            let localPath = await liveBrowser.pullForThumbnail(photo, timeout: timeout)
 
             guard let path = localPath, !Task.isCancelled else { return }
 
@@ -962,6 +957,11 @@ struct PhotoBrowserView: View {
         }
         Task {
             let count = await photoVM.extractSelected(itemsToExtract, to: url.path)
+            if count > 0 { NSWorkspace.shared.open(url) }
+        }
+    }
+}
+ = await photoVM.extractSelected(itemsToExtract, to: url.path)
             if count > 0 { NSWorkspace.shared.open(url) }
         }
     }

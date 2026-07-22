@@ -287,12 +287,37 @@ final class LiveDeviceBrowser: ObservableObject {
         }
     }
 
-    /// Returns the local cache path if the file has already been downloaded and is non-empty.
+    /// Returns the local preview-cache path if already downloaded and non-empty.
     func cachedPath(for photo: LivePhoto) -> String? {
         guard let udid = deviceUDID else { return nil }
         let path = localCachePath(for: photo, udid: udid)
         let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int ?? 0
         return size > 0 ? path : nil
+    }
+
+    /// Pull a file into a SEPARATE thumbnail cache dir so it never conflicts
+    /// with an in-progress preview download writing to the same path.
+    func pullForThumbnail(_ photo: LivePhoto, timeout: TimeInterval = 20) async -> String? {
+        guard let udid = deviceUDID else { return nil }
+        let tmpDir = NSTemporaryDirectory() + "phosphor-thumbs-\(udid.prefix(8))"
+        let fm = FileManager.default
+        try? fm.createDirectory(atPath: tmpDir, withIntermediateDirectories: true)
+        let localPath = (tmpDir as NSString).appendingPathComponent(uniqueLocalName(for: photo))
+
+        if fm.fileExists(atPath: localPath) {
+            let size = (try? fm.attributesOfItem(atPath: localPath))?[.size] as? Int ?? 0
+            if size > 0 { return localPath }
+            try? fm.removeItem(atPath: localPath)
+        }
+
+        let args = ["afc", "pull", photo.path, localPath, "--udid", udid]
+        let result = await PyMobileDevice.runAsync(args, timeout: timeout)
+        let pulled = (try? fm.attributesOfItem(atPath: localPath))?[.size] as? Int ?? 0
+        if !result.succeeded || pulled == 0 {
+            try? fm.removeItem(atPath: localPath)
+            return nil
+        }
+        return localPath
     }
 
     private func localCachePath(for photo: LivePhoto, udid: String) -> String {
