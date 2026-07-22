@@ -1042,8 +1042,3 @@ struct PhotoBrowserView: View {
         }
     }
 }
- = await photoVM.extractSelected(itemsToExtract, to: url.path)
-            if count > 0 { NSWorkspace.shared.open(url) }
-        }
-    }
-}
